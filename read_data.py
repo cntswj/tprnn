@@ -129,7 +129,6 @@ def prepare_batch_data(tuples):
 
     # prepare target-masks data
     target_masks = [t['target_mask'] for t in tuples]
-    # target_masks_matrix = np.zeros((n_samples, n_timesteps)).astype(theano.config.floatX)
     target_masks_matrix = np.zeros((n_samples, n_timesteps)).astype('int32')
     for i, target_mask in enumerate(target_masks):
         target_masks_matrix[i, : lengths[i]] = target_mask

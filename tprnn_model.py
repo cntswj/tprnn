@@ -97,10 +97,9 @@ def build_model(tparams, options):
     seq_masks = tensor.matrix('seq_masks', dtype=config.floatX)
     topo_masks = tensor.tensor3('topo_masks', dtype=config.floatX)
     target_masks = tensor.matrix('target_masks', dtype='int32')
-    # target_masks = tensor.matrix('target_masks', dtype=config.floatX)
-    labels = tensor.vector('labels', dtype='int32')
 
     input_list = [seqs, seq_masks, topo_masks, target_masks]
+    labels = tensor.vector('labels', dtype='int32')
 
     n_timesteps = seqs.shape[0]
     n_samples = seqs.shape[1]
@@ -118,12 +117,10 @@ def build_model(tparams, options):
     logits = tensor.dot(h_arr.dimshuffle(1, 0, 2), tparams['theta'])
     masked_logits = theano.tensor.switch(target_masks, logits, np.NINF)
     probs = tensor.nnet.softmax(masked_logits)
-    # exps = tensor.exp(logits) * target_masks
-    # probs = exps / exps.sum(axis=1)[:, None]
 
     # set up cost
-    off = 1e-8
-    cost = -tensor.log(probs[tensor.arange(n_samples), labels] + off).mean()
+    # off = 1e-8
+    cost = tensor.nnet.nnet.categorical_crossentropy(probs, labels).mean()
 
     # L2 penalty terms
     cost += options['decay_lstm_W'] * (tparams['lstm_W'] ** 2).sum()

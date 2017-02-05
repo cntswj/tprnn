@@ -4,7 +4,8 @@ import os
 import codecs
 import networkx as nx
 import numpy as np
-import pprint
+# import pprint
+import theano
 
 
 def load_graph(data_dir):
@@ -18,7 +19,7 @@ def load_graph(data_dir):
     return G
 
 
-def convert_cascade_to_examples(line, G=None, max_length=50):
+def convert_cascade_to_examples(line, G=None, node_map=None, max_length=50):
     # parses the input line.
     action, cascade = line.strip().split(';')
     sequence = cascade.split(',')[::2]
@@ -53,40 +54,97 @@ def convert_cascade_to_examples(line, G=None, max_length=50):
         # next node as label
         label = sequence[i + 1]
 
-        example = (ordered_nodes, topo_mask, target_mask, label)
+        example = {'sequence': [node_map[v] for v in ordered_nodes],
+                   'topo_mask': topo_mask,
+                   'target_mask': target_mask,
+                   'label': node_map[label]}
         examples.append(example)
 
     return examples
 
 
-def load_cascade_examples(data_dir, dataset="train", G=None):
+def load_cascade_examples(data_dir, dataset="train"):
     """
     Load the train/dev/test data
-    Return: dict of examples
+    Return: list of examples
     """
+    # loads graph
+    G = load_graph(data_dir)
+    node_map = {node: i for i, node in enumerate(G.nodes())}
+
+    # loads cascades
     filename = os.path.join(data_dir, dataset + '.txt')
-
-    example_dict = {}
-    vocab = set()
-
-    # read in all the strings, convert them to trees, and store them in a dict
+    example_tuples = []
     with codecs.open(filename, 'r', encoding='utf-8') as input_file:
         for line_index, line in enumerate(input_file):
-            examples = convert_cascade_to_examples(line, G)
-            for example_index, example in enumerate(examples):
-                key = str(line_index) + '.' + str(example_index)
-                sequence, topo_mask, target_mask, label = example
-                example_dict[key] = {'sequence': sequence,
-                                     'topo_mask': topo_mask,
-                                     'target_mask': target_mask,
-                                     'label': label}
-                vocab.update(set(sequence))
+            examples = convert_cascade_to_examples(line, G=G, node_map=node_map)
+            example_tuples.extend(examples)
 
-    return example_dict, vocab
+    return example_tuples, node_map
 
 
-G = load_graph('data/toy')
-examples, _ = load_cascade_examples('data/toy', dataset='train', G=G)
+def get_minibatches_idx(n, minibatch_size, shuffle=False):
+    idx_list = np.arange(n, dtype="int32")
 
-pp = pprint.PrettyPrinter(indent=4)
-pp.pprint(examples)
+    if shuffle:
+        np.random.shuffle(idx_list)
+
+    minibatches = []
+    minibatch_start = 0
+    for i in range(n // minibatch_size):
+        minibatches.append(idx_list[minibatch_start:
+                                    minibatch_start + minibatch_size])
+        minibatch_start += minibatch_size
+
+    if (minibatch_start != n):
+        # Make a minibatch out of what is left
+        minibatches.append(idx_list[minibatch_start:])
+
+    return zip(range(len(minibatches)), minibatches)
+
+
+def prepare_batch_data(tuples):
+    '''
+    produces a mini-batch of data in format required by model.
+    '''
+    seqs = [t['sequence'] for t in tuples]
+    lengths = map(len, seqs)
+    n_timesteps = max(lengths)
+    n_samples = len(tuples)
+
+    # prepare sequences data
+    seqs_matrix = np.zeros((n_timesteps, n_samples)).astype('int32')
+    for i, seq in enumerate(seqs):
+        seqs_matrix[: lengths[i], i] = seq
+
+    # prepare topo-masks data
+    topo_masks = [t['topo_mask'] for t in tuples]
+    topo_masks_tensor = np.zeros((n_timesteps, n_samples, n_timesteps)).astype(theano.config.floatX)
+    for i, topo_mask in enumerate(topo_masks):
+        topo_masks_tensor[: lengths[i], i, : lengths[i]] = topo_mask
+
+    # prepare target-masks data
+    target_masks = [t['target_mask'] for t in tuples]
+    target_masks_matrix = np.zeros((n_samples, n_timesteps)).astype(theano.config.floatX)
+    for i, target_mask in enumerate(target_masks):
+        target_masks_matrix[i, : lengths[i]] = target_mask
+
+    # prepare labels data
+    labels = [t['label'] for t in tuples]
+    labels_vector = np.array(labels).astype('int32')
+
+    # prepare sequence masks
+    seq_masks_matrix = np.zeros((n_timesteps, n_samples)).astype(theano.config.floatX)
+    for i, length in enumerate(lengths):
+        seq_masks_matrix[: length, i] = 1.
+
+    return [seqs_matrix, seq_masks_matrix, topo_masks_tensor, target_masks_matrix, labels_vector]
+
+
+# tests
+# G = load_graph('data/toy')
+# examples, node_map = load_cascade_examples('data/toy', dataset='train')
+
+# pp = pprint.PrettyPrinter(indent=4)
+# pp.pprint(examples)
+# pp.pprint(node_map)

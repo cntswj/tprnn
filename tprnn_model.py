@@ -6,8 +6,7 @@ import numpy as np
 import theano
 from theano import config
 import theano.tensor as tensor
-# from theano.sandbox.rng_mrg import MRG_RandomStreams as RandomStreams
-import pdb
+
 
 # Set the random number generators' seeds for consistency
 SEED = 123
@@ -20,10 +19,12 @@ def numpy_floatX(data):
 
 def lstm_layer(tparams, state_below, options, seq_masks=None, topo_masks=None):
     '''
-    state_below has shape: n_timesteps * n_samples * dim_proj
-    topo_masks has shape: n_timesteps * n_samples * n_timesteps
+    The LSTM model.
+    state_below.shape (n_timesteps, n_samples, dim_proj)
+    topo_masks.shape: (n_timesteps, n_samples, n_timesteps)
+
     Returns:
-        hidden states for each step, shape = n_timesteps * n_samples *dim_proj
+        a tensor of hidden states for all steps, has shape (n_timesteps, n_samples, dim_proj).
     '''
     n_timesteps = state_below.shape[0]
     if state_below.ndim == 3:
@@ -41,15 +42,16 @@ def lstm_layer(tparams, state_below, options, seq_masks=None, topo_masks=None):
 
     def _step(index, seq_m_, topo_m_, x_, h_arr_, c_arr_):
         '''
-        topo_m_: shape = n_samples * n_timesteps
-        h_arr_: shape = n_timesteps * n_samples * dim_proj
+        A LSTM step.
+        topo_m_.shape = (n_samples, n_timesteps)
+        h_arr_.shape shape = (n_timesteps, n_samples, dim_proj)
         '''
-        # tranposes h_arr_ to have shape n_samples * n_timesteps * dim_proj
+        # tranposes h_arr_ to have shape (n_samples, n_timesteps, dim_proj)
         # h_sum_ has shape n_samples * dim_proj
         h_sum = (topo_m_[:, :, None] * h_arr_.dimshuffle(1, 0, 2)).sum(axis=1)
         c_sum = (topo_m_[:, :, None] * c_arr_.dimshuffle(1, 0, 2)).sum(axis=1)
 
-        # lstm_U has shape dim_proj * (4*dim_proj)
+        # lstm_U.shape = (dim_proj, 4*dim_proj)
         preact = tensor.dot(h_sum, tparams['lstm_U'])
         preact += x_
 
@@ -94,7 +96,8 @@ def build_model(tparams, options):
     seqs = tensor.matrix('seqs', dtype='int32')
     seq_masks = tensor.matrix('seq_masks', dtype=config.floatX)
     topo_masks = tensor.tensor3('topo_masks', dtype=config.floatX)
-    target_masks = tensor.matrix('target_masks', dtype=config.floatX)
+    target_masks = tensor.matrix('target_masks', dtype='int32')
+    # target_masks = tensor.matrix('target_masks', dtype=config.floatX)
     labels = tensor.vector('labels', dtype='int32')
 
     input_list = [seqs, seq_masks, topo_masks, target_masks]
@@ -113,14 +116,16 @@ def build_model(tparams, options):
 
     # customized softmax using masks
     logits = tensor.dot(h_arr.dimshuffle(1, 0, 2), tparams['theta'])
-    exps = tensor.exp(logits) * target_masks
-    probs = exps / exps.sum(axis=1)[:, None]
+    masked_logits = theano.tensor.switch(target_masks, logits, np.NINF)
+    probs = tensor.nnet.softmax(masked_logits)
+    # exps = tensor.exp(logits) * target_masks
+    # probs = exps / exps.sum(axis=1)[:, None]
 
     # set up cost
     off = 1e-8
     cost = -tensor.log(probs[tensor.arange(n_samples), labels] + off).mean()
 
-    # l2 penalty terms
+    # L2 penalty terms
     cost += options['decay_lstm_W'] * (tparams['lstm_W'] ** 2).sum()
     cost += options['decay_lstm_U'] * (tparams['lstm_U'] ** 2).sum()
     cost += options['decay_lstm_b'] * (tparams['lstm_b'] ** 2).sum()

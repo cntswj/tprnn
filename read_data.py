@@ -51,7 +51,7 @@ def convert_cascade_to_examples(line, G=None, node_map=None, max_length=50):
             i_p = [node_index[x] for x in sub_dag.predecessors(v)]
             topo_mask[i_v, i_p] = 1
 
-        # next node as label (note: not a node index!)
+        # next node as label (catch: timestep id instead of node index)
         label = i + 1
 
         example = {'sequence': [node_map[v] for v in ordered_nodes],
@@ -66,7 +66,7 @@ def convert_cascade_to_examples(line, G=None, node_map=None, max_length=50):
 def load_cascade_examples(data_dir, dataset="train"):
     """
     Load the train/dev/test data
-    Return: list of examples
+    Return: list of example tuples
     """
     # loads graph
     G = load_graph(data_dir)
@@ -84,6 +84,10 @@ def load_cascade_examples(data_dir, dataset="train"):
 
 
 def get_minibatches_idx(n, minibatch_size, shuffle=False):
+    '''
+    Returns:
+        A list of mini-batch of data indices
+    '''
     idx_list = np.arange(n, dtype="int32")
 
     if shuffle:
@@ -100,7 +104,7 @@ def get_minibatches_idx(n, minibatch_size, shuffle=False):
         # Make a minibatch out of what is left
         minibatches.append(idx_list[minibatch_start:])
 
-    return zip(range(len(minibatches)), minibatches)
+    return minibatches
 
 
 def prepare_batch_data(tuples):
@@ -125,7 +129,8 @@ def prepare_batch_data(tuples):
 
     # prepare target-masks data
     target_masks = [t['target_mask'] for t in tuples]
-    target_masks_matrix = np.zeros((n_samples, n_timesteps)).astype(theano.config.floatX)
+    # target_masks_matrix = np.zeros((n_samples, n_timesteps)).astype(theano.config.floatX)
+    target_masks_matrix = np.zeros((n_samples, n_timesteps)).astype('int32')
     for i, target_mask in enumerate(target_masks):
         target_masks_matrix[i, : lengths[i]] = target_mask
 

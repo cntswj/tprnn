@@ -114,7 +114,7 @@ def build_model(tparams, options):
     # customized softmax using masks
     logits = tensor.dot(h_arr.dimshuffle(1, 0, 2), tparams['theta'])
     exps = tensor.exp(logits) * target_masks
-    probs = exps / (exps.sum(axis=1))[:, None]
+    probs = exps / exps.sum(axis=1)[:, None]
 
     # set up cost
     off = 1e-8

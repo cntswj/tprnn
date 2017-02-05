@@ -51,13 +51,13 @@ def convert_cascade_to_examples(line, G=None, node_map=None, max_length=50):
             i_p = [node_index[x] for x in sub_dag.predecessors(v)]
             topo_mask[i_v, i_p] = 1
 
-        # next node as label
-        label = sequence[i + 1]
+        # next node as label (note: not a node index!)
+        label = i + 1
 
         example = {'sequence': [node_map[v] for v in ordered_nodes],
                    'topo_mask': topo_mask,
                    'target_mask': target_mask,
-                   'label': node_map[label]}
+                   'label': label}
         examples.append(example)
 
     return examples

@@ -6,7 +6,6 @@
 #   q-masks: dims = (example, mask), shape = n_samples * length
 #   labels: dims = (example, label), shape = n_samples * 0
 
-import read_data
 import numpy as np
 import theano
 # from theano import tensor
@@ -14,9 +13,10 @@ from theano import config
 from collections import OrderedDict
 import timeit
 import six.moves.cPickle as pickle
-import tprnn_model
-# from optimizers import adadelta
 import downhill
+
+import read_data
+import tprnn_model
 
 
 def numpy_floatX(data):

@@ -83,72 +83,61 @@ def load_cascade_examples(data_dir, dataset="train"):
     return example_tuples, node_map
 
 
-def get_minibatches_idx(n, minibatch_size, shuffle=False):
-    '''
-    Returns:
-        A list of mini-batch of data indices
-    '''
-    idx_list = np.arange(n, dtype="int32")
+class Loader:
+    def __init__(self, data, batch_size=64, shuffle=False):
+        self.batch_size = batch_size
+        self.idx = 0
+        self.data = data
+        self.shuffle = shuffle
+        self.n = len(data)
+        self.indices = np.arange(self.n, dtype="int32")
+        self.n_batches = self.n // batch_size
 
-    if shuffle:
-        np.random.shuffle(idx_list)
+    def __prepare_minibatch(self, tuples):
+        '''
+        produces a mini-batch of data in format required by model.
+        '''
+        seqs = [t['sequence'] for t in tuples]
+        lengths = map(len, seqs)
+        n_timesteps = max(lengths)
+        n_samples = len(tuples)
 
-    minibatches = []
-    minibatch_start = 0
-    for i in range(n // minibatch_size):
-        minibatches.append(idx_list[minibatch_start:
-                                    minibatch_start + minibatch_size])
-        minibatch_start += minibatch_size
+        # prepare sequences data
+        seqs_matrix = np.zeros((n_timesteps, n_samples)).astype('int32')
+        for i, seq in enumerate(seqs):
+            seqs_matrix[: lengths[i], i] = seq
 
-    if (minibatch_start != n):
-        # Make a minibatch out of what is left
-        minibatches.append(idx_list[minibatch_start:])
+        # prepare topo-masks data
+        topo_masks = [t['topo_mask'] for t in tuples]
+        topo_masks_tensor = np.zeros((n_timesteps, n_samples, n_timesteps)).astype(theano.config.floatX)
+        for i, topo_mask in enumerate(topo_masks):
+            topo_masks_tensor[: lengths[i], i, : lengths[i]] = topo_mask
 
-    return minibatches
+        # prepare target-masks data
+        target_masks = [t['target_mask'] for t in tuples]
+        target_masks_matrix = np.zeros((n_samples, n_timesteps)).astype('int32')
+        for i, target_mask in enumerate(target_masks):
+            target_masks_matrix[i, : lengths[i]] = target_mask
 
+        # prepare labels data
+        labels = [t['label'] for t in tuples]
+        labels_vector = np.array(labels).astype('int32')
 
-def prepare_batch_data(tuples):
-    '''
-    produces a mini-batch of data in format required by model.
-    '''
-    seqs = [t['sequence'] for t in tuples]
-    lengths = map(len, seqs)
-    n_timesteps = max(lengths)
-    n_samples = len(tuples)
+        # prepare sequence masks
+        seq_masks_matrix = np.zeros((n_timesteps, n_samples)).astype(theano.config.floatX)
+        for i, length in enumerate(lengths):
+            seq_masks_matrix[: length, i] = 1.
 
-    # prepare sequences data
-    seqs_matrix = np.zeros((n_timesteps, n_samples)).astype('int32')
-    for i, seq in enumerate(seqs):
-        seqs_matrix[: lengths[i], i] = seq
+        return (seqs_matrix, seq_masks_matrix, topo_masks_tensor, target_masks_matrix, labels_vector)
 
-    # prepare topo-masks data
-    topo_masks = [t['topo_mask'] for t in tuples]
-    topo_masks_tensor = np.zeros((n_timesteps, n_samples, n_timesteps)).astype(theano.config.floatX)
-    for i, topo_mask in enumerate(topo_masks):
-        topo_masks_tensor[: lengths[i], i, : lengths[i]] = topo_mask
-
-    # prepare target-masks data
-    target_masks = [t['target_mask'] for t in tuples]
-    target_masks_matrix = np.zeros((n_samples, n_timesteps)).astype('int32')
-    for i, target_mask in enumerate(target_masks):
-        target_masks_matrix[i, : lengths[i]] = target_mask
-
-    # prepare labels data
-    labels = [t['label'] for t in tuples]
-    labels_vector = np.array(labels).astype('int32')
-
-    # prepare sequence masks
-    seq_masks_matrix = np.zeros((n_timesteps, n_samples)).astype(theano.config.floatX)
-    for i, length in enumerate(lengths):
-        seq_masks_matrix[: length, i] = 1.
-
-    return [seqs_matrix, seq_masks_matrix, topo_masks_tensor, target_masks_matrix, labels_vector]
-
-
-# tests
-# G = load_graph('data/toy')
-# examples, node_map = load_cascade_examples('data/toy', dataset='train')
-
-# pp = pprint.PrettyPrinter(indent=4)
-# pp.pprint(examples)
-# pp.pprint(node_map)
+    def __call__(self):
+        if self.shuffle and self.idx == 0:
+            np.random.shuffle(self.indices)
+        try:
+            batch_indices = self.indices[self.idx: self.idx + self.batch_size]
+            batch_examples = [self.data[i] for i in batch_indices]
+            return self.__prepare_minibatch(batch_examples)
+        finally:
+            self.idx += self.batch_size
+            if self.idx >= self.n:
+                self.idx = 0

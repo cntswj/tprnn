@@ -100,10 +100,10 @@ data_dir = 'data/toy/'
 def train(dim_proj=64,
           n_words=10000,
           maxlen=100,
-          batch_size=200,
-          is_shuffle_for_batch=False,
-          lrate=0.01,
-          max_epochs=10000,
+          batch_size=64,
+          shuffle_for_batch=False,
+          learning_rate=0.01,
+          max_epochs=100,
           disp_freq=100,
           save_freq=1000,
           saveto=data_dir + 'saved/params.npz',
@@ -132,7 +132,9 @@ def train(dim_proj=64,
     # prepares training data.
     print 'Loading data...'
     training_examples, _ = read_data.load_cascade_examples(data_dir, dataset='train')
-    batch_loader = read_data.Loader(training_examples, batch_size=64)
+    batch_loader = read_data.Loader(training_examples,
+                                    batch_size=batch_size,
+                                    shuffle=shuffle_for_batch)
 
     # training loop.
     start_time = timeit.default_timer()
@@ -146,7 +148,7 @@ def train(dim_proj=64,
         # patience=0,
         max_gradient_clip=1,
         # max_gradient_norm=1,
-        learning_rate=0.01,
+        learning_rate=learning_rate,
         monitor_gradients=False)
 
     end_time = timeit.default_timer()

@@ -119,7 +119,6 @@ def build_model(tparams, options):
     probs = tensor.nnet.softmax(masked_logits)
 
     # set up cost
-    # off = 1e-8
     cost = tensor.nnet.nnet.categorical_crossentropy(probs, labels).mean()
 
     # L2 penalty terms

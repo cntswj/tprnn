@@ -1,11 +1,3 @@
-# Notes on dims:
-#   length = sequences.shape[0]
-#   n_samples = sequences.shape[1]
-#   seqs: dims = (time, example), shape = length * n_samples
-#   a-masks: dims = (time, example, mask), shape = length * n_samples * length
-#   q-masks: dims = (example, mask), shape = n_samples * length
-#   labels: dims = (example, label), shape = n_samples * 0
-
 import numpy as np
 import theano
 # from theano import tensor
@@ -14,7 +6,8 @@ from collections import OrderedDict
 import timeit
 import six.moves.cPickle as pickle
 import downhill
-import pdb
+# import pdb
+# import pprint
 
 import read_data
 import tprnn_model
@@ -36,9 +29,9 @@ def init_params(options):
     """
     params = OrderedDict()
 
-    # word embedding, shape = #words * dim_proj
-    randn = np.random.rand(options['n_words'],
-                           options['dim_proj'])
+    # word embedding, shape = (n_words, dim_proj)
+    randn = np.random.randn(options['n_words'],
+                            options['dim_proj'])
     params['Wemb'] = (0.1 * randn).astype(config.floatX)
 
     # shape = dim_proj * (4*dim_proj)
@@ -58,9 +51,10 @@ def init_params(options):
     lstm_b = np.zeros((4 * options['dim_proj'],))
     params['lstm_b'] = lstm_b.astype(config.floatX)
 
-    # shape = dim_proj * 0
-    theta = 0.1 * np.random.randn(options['dim_proj'])
-    params['theta'] = theta.astype(config.floatX)
+    # decoding matrix
+    randn = np.random.randn(options['dim_proj'],
+                            options['n_words'])
+    params['Wout'] = (0.1 * randn).astype(config.floatX)
 
     return params
 
@@ -98,10 +92,10 @@ def load_params(path, params):
 data_dir = 'data/twitter/'
 
 
-def train(dim_proj=64,
+def train(dim_proj=128,
           n_words=200000,
           maxlen=50,
-          batch_size=64,
+          batch_size=128,
           shuffle_for_batch=True,
           learning_rate=0.001,
           max_epochs=100,
@@ -112,7 +106,7 @@ def train(dim_proj=64,
           decay_lstm_W=0.01,
           decay_lstm_U=0.01,
           decay_lstm_b=0.01,
-          decay_theta=0.01):
+          decay_Wout=0.01):
     """
     Topo-LSTM model training.
     """
@@ -133,6 +127,7 @@ def train(dim_proj=64,
     # prepares training data.
     print 'Loading data...'
     training_examples, _ = read_data.load_cascade_examples(data_dir, dataset='train')
+    print 'Loaded %d training examples.' % len(training_examples)
     batch_loader = read_data.Loader(training_examples,
                                     batch_size=batch_size,
                                     shuffle=shuffle_for_batch)

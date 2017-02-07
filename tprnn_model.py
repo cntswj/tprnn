@@ -92,13 +92,19 @@ def lstm_layer(tparams, state_below, options, seq_masks=None, topo_masks=None):
 
 
 def build_model(tparams, options):
-    # set up input symbols
+    '''
+    Builds Topo-LSTM model.
+    '''
+    # set up input symbols. Shapes:
+    #   seqs.shape = (n_timesteps, n_samples)
+    #   seq_masks.shape = (n_timesteps, n_samples)
+    #   topo_masks.shape = (n_timesteps, n_samples, n_timesteps)
+    #   labels.shape = (n_samples,)
     seqs = tensor.matrix('seqs', dtype='int32')
     seq_masks = tensor.matrix('seq_masks', dtype=config.floatX)
     topo_masks = tensor.tensor3('topo_masks', dtype=config.floatX)
-    target_masks = tensor.matrix('target_masks', dtype='int32')
 
-    input_list = [seqs, seq_masks, topo_masks, target_masks]
+    input_list = [seqs, seq_masks, topo_masks]
     labels = tensor.vector('labels', dtype='int32')
 
     n_timesteps = seqs.shape[0]
@@ -113,10 +119,12 @@ def build_model(tparams, options):
     # h_arr.shape = (n_timesteps, n_samples, dim_proj)
     h_arr = lstm_layer(tparams, embs, options, seq_masks=seq_masks, topo_masks=topo_masks)
 
-    # customized softmax using masks
-    logits = tensor.dot(h_arr.dimshuffle(1, 0, 2), tparams['theta'])
-    masked_logits = theano.tensor.switch(target_masks, logits, np.NINF)
-    probs = tensor.nnet.softmax(masked_logits)
+    # mean pooling of hidden states, h_mean.shape=(n_samples, dim_proj)
+    h_mean = (seq_masks[:, :, None] * h_arr).mean(axis=0)
+
+    # decode and softmax, logits.shape=(n_samples, n_words)
+    logits = tensor.dot(h_mean, tparams['Wout'])
+    probs = tensor.nnet.softmax(logits)
 
     # set up cost
     cost = tensor.nnet.nnet.categorical_crossentropy(probs, labels).mean()
@@ -125,7 +133,7 @@ def build_model(tparams, options):
     cost += options['decay_lstm_W'] * (tparams['lstm_W'] ** 2).sum()
     cost += options['decay_lstm_U'] * (tparams['lstm_U'] ** 2).sum()
     cost += options['decay_lstm_b'] * (tparams['lstm_b'] ** 2).sum()
-    cost += options['decay_theta'] * (tparams['theta'] ** 2).sum()
+    cost += options['decay_Wout'] * (tparams['Wout'] ** 2).sum()
 
     # set up functions for inferencing
     f_prob = theano.function(input_list, probs, name='f_prob')

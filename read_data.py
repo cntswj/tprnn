@@ -4,7 +4,7 @@ import os
 import codecs
 import networkx as nx
 import numpy as np
-# import pprint
+import pprint
 import theano
 
 
@@ -27,37 +27,31 @@ def convert_cascade_to_examples(line, G=None, node_map=None, max_length=50):
 
     # grows the series of dags incrementally.
     examples = []
-    sub_dag = nx.DiGraph()
+    dag = nx.DiGraph()
     for i, node in enumerate(sequence[:-1]):
         # grows the current dag.
-        seen_nodes = sequence[: i + 1]
-        sub_dag.add_edges_from(
-            [(node, v) for v in G[node] if v not in seen_nodes])
+        seq = sequence[: i + 1]
+        dag.add_node(node)
+        predecessors = set(G[node]) & set(seq)
+        dag.add_edges_from(
+            [(v, node) for v in predecessors])
 
         # will compute hidden states for nodes following their topological ordering.
-        ordered_nodes = nx.topological_sort(sub_dag)
-        node_index = {v: i for i, v in enumerate(ordered_nodes)}
-        length = len(ordered_nodes)
+        node_index = {v: i for i, v in enumerate(seq)}
+        length = len(seq)
 
-        # targets (candidates) masks
-        targets = list(set(sub_dag.nodes()) - set(seen_nodes))
-        i_targets = [node_index[v] for v in targets]
-        target_mask = np.zeros(length, dtype=np.int)
-        target_mask[i_targets] = 1
-
-        # structure masks
+        # topology masks
         topo_mask = np.zeros((length, length), dtype=np.int)
-        for i_v, v in enumerate(ordered_nodes):
-            i_p = [node_index[x] for x in sub_dag.predecessors(v)]
+        for i_v, v in enumerate(seq):
+            i_p = [node_index[x] for x in dag.predecessors(v)]
             topo_mask[i_v, i_p] = 1
 
         # next node as label (catch: timestep id instead of node index)
-        label = i + 1
+        label = sequence[i + 1]
 
-        example = {'sequence': [node_map[v] for v in ordered_nodes],
+        example = {'sequence': [node_map[v] for v in seq],
                    'topo_mask': topo_mask,
-                   'target_mask': target_mask,
-                   'label': label}
+                   'label': node_map[label]}
         examples.append(example)
 
     return examples
@@ -113,12 +107,6 @@ class Loader:
         for i, topo_mask in enumerate(topo_masks):
             topo_masks_tensor[: lengths[i], i, : lengths[i]] = topo_mask
 
-        # prepare target-masks data
-        target_masks = [t['target_mask'] for t in tuples]
-        target_masks_matrix = np.zeros((n_samples, n_timesteps)).astype('int32')
-        for i, target_mask in enumerate(target_masks):
-            target_masks_matrix[i, : lengths[i]] = target_mask
-
         # prepare labels data
         labels = [t['label'] for t in tuples]
         labels_vector = np.array(labels).astype('int32')
@@ -128,16 +116,17 @@ class Loader:
         for i, length in enumerate(lengths):
             seq_masks_matrix[: length, i] = 1.
 
-        return (seqs_matrix, seq_masks_matrix, topo_masks_tensor, target_masks_matrix, labels_vector)
+        return (seqs_matrix, seq_masks_matrix, topo_masks_tensor, labels_vector)
 
     def __call__(self):
         if self.shuffle and self.idx == 0:
             np.random.shuffle(self.indices)
-        try:
-            batch_indices = self.indices[self.idx: self.idx + self.batch_size]
-            batch_examples = [self.data[i] for i in batch_indices]
-            return self.__prepare_minibatch(batch_examples)
-        finally:
-            self.idx += self.batch_size
-            if self.idx >= self.n:
-                self.idx = 0
+
+        batch_indices = self.indices[self.idx: self.idx + self.batch_size]
+        batch_examples = [self.data[i] for i in batch_indices]
+
+        self.idx += self.batch_size
+        if self.idx >= self.n:
+            self.idx = 0
+
+        return self.__prepare_minibatch(batch_examples)

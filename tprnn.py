@@ -89,11 +89,9 @@ def load_params(path, params):
     return params
 
 
-data_dir = 'data/twitter/'
-
-
-def train(dim_proj=128,
-          n_words=200000,
+def train(data_dir='data/dblp/',
+          dim_proj=128,
+          n_words=1000000,
           maxlen=50,
           batch_size=128,
           shuffle_for_batch=True,
@@ -101,7 +99,7 @@ def train(dim_proj=128,
           max_epochs=100,
           disp_freq=100,
           save_freq=100,
-          saveto=data_dir + 'saved/params.npz',
+          saveto_file='params.npz',
           reload_model=False,
           decay_lstm_W=0.01,
           decay_lstm_U=0.01,
@@ -152,6 +150,7 @@ def train(dim_proj=128,
 
     # dump model parameters.
     params = unzip(tparams)
+    saveto = data_dir + saveto_file
     np.savez(saveto, **params)
     pickle.dump(options, open('%s.pkl' % saveto, 'wb'), -1)
 

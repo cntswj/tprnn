@@ -16,6 +16,8 @@ def load_graph(data_dir):
         for line in f:
             u, v = line.strip().split()
             G.add_edge(u, v)
+
+    print nx.info(G)
     return G
 
 

@@ -21,8 +21,8 @@ def load_graph(data_dir):
 
 def convert_cascade_to_examples(line, G=None, node_map=None, max_length=50):
     # parses the input line.
-    action, cascade = line.strip().split(';')
-    sequence = cascade.split(',')[::2]
+    action, cascade = line.strip().split(' ', 1)
+    sequence = cascade.split(' ')[::2]
     sequence = sequence[:max_length]
 
     # grows the series of dags incrementally.

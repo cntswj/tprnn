@@ -14,6 +14,7 @@ from collections import OrderedDict
 import timeit
 import six.moves.cPickle as pickle
 import downhill
+import pdb
 
 import read_data
 import tprnn_model
@@ -94,18 +95,18 @@ def load_params(path, params):
     return params
 
 
-data_dir = 'data/toy/'
+data_dir = 'data/twitter/'
 
 
 def train(dim_proj=64,
-          n_words=10000,
-          maxlen=100,
+          n_words=200000,
+          maxlen=50,
           batch_size=64,
-          shuffle_for_batch=False,
-          learning_rate=0.01,
+          shuffle_for_batch=True,
+          learning_rate=0.001,
           max_epochs=100,
           disp_freq=100,
-          save_freq=1000,
+          save_freq=100,
           saveto=data_dir + 'saved/params.npz',
           reload_model=False,
           decay_lstm_W=0.01,

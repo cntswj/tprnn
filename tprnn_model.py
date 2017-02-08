@@ -9,8 +9,8 @@ import theano.tensor as tensor
 
 
 # Set the random number generators' seeds for consistency
-SEED = 123
-np.random.seed(SEED)
+# SEED = 123
+# np.random.seed(SEED)
 
 
 def numpy_floatX(data):
@@ -94,8 +94,9 @@ def lstm_layer(tparams, state_below, options, seq_masks=None, topo_masks=None):
 def build_model(tparams, options):
     '''
     Builds Topo-LSTM model.
+    Returns a dictionary of outlet symbols
     '''
-    # set up input symbols. Shapes:
+    # Set up input symbols with shapes:
     #   seqs.shape = (n_timesteps, n_samples)
     #   seq_masks.shape = (n_timesteps, n_samples)
     #   topo_masks.shape = (n_timesteps, n_samples, n_timesteps)
@@ -120,23 +121,33 @@ def build_model(tparams, options):
     h_arr = lstm_layer(tparams, embs, options, seq_masks=seq_masks, topo_masks=topo_masks)
 
     # mean pooling of hidden states, h_mean.shape=(n_samples, dim_proj)
-    h_mean = (seq_masks[:, :, None] * h_arr).mean(axis=0)
+    h_sum = (seq_masks[:, :, None] * h_arr).sum(axis=0)
+    lengths = seq_masks.sum(axis=0)
+    h_mean = h_sum / lengths[:, None]
 
-    # decode and softmax, logits.shape=(n_samples, n_words)
-    logits = tensor.dot(h_mean, tparams['Wout'])
+    # decoding, probs.shape=(n_samples, n_words)
+    logits = tensor.dot(h_mean, tparams['dec_W']) + tparams['dec_b'][None, :]
     probs = tensor.nnet.softmax(logits)
 
     # set up cost
     cost = tensor.nnet.nnet.categorical_crossentropy(probs, labels).mean()
+    f_eval = theano.function(input_list + [labels], cost, name='f_eval')
 
     # L2 penalty terms
-    cost += options['decay_lstm_W'] * (tparams['lstm_W'] ** 2).sum()
-    cost += options['decay_lstm_U'] * (tparams['lstm_U'] ** 2).sum()
-    cost += options['decay_lstm_b'] * (tparams['lstm_b'] ** 2).sum()
-    cost += options['decay_Wout'] * (tparams['Wout'] ** 2).sum()
+    cost += options['weight_decay'] * (tparams['lstm_W'] ** 2).sum()
+    cost += options['weight_decay'] * (tparams['lstm_U'] ** 2).sum()
+    cost += options['weight_decay'] * (tparams['lstm_b'] ** 2).sum()
+    cost += options['weight_decay'] * (tparams['dec_W'] ** 2).sum()
+    cost += options['weight_decay'] * (tparams['dec_b'] ** 2).sum()
 
     # set up functions for inferencing
     f_prob = theano.function(input_list, probs, name='f_prob')
     f_pred = theano.function(input_list, probs.argmax(axis=1), name='f_pred')
 
-    return input_list, labels, cost, f_prob, f_pred
+    return {'inputs': input_list,
+            'labels': labels,
+            'cost': cost,
+            'f_prob': f_prob,
+            'f_pred': f_pred,
+            'f_eval': f_eval,
+            'data': input_list + [labels]}

@@ -9,7 +9,7 @@ import downhill
 # import pdb
 # import pprint
 
-import read_data
+import data_utils
 import tprnn_model
 
 
@@ -54,7 +54,10 @@ def init_params(options):
     # decoding matrix
     randn = np.random.randn(options['dim_proj'],
                             options['n_words'])
-    params['Wout'] = (0.1 * randn).astype(config.floatX)
+    params['dec_W'] = (0.1 * randn).astype(config.floatX)
+
+    dec_b = np.zeros(options['n_words'])
+    params['dec_b'] = dec_b.astype(config.floatX)
 
     return params
 
@@ -89,70 +92,168 @@ def load_params(path, params):
     return params
 
 
-def train(data_dir='data/dblp/',
-          dim_proj=128,
-          n_words=1000000,
+def evaluate(f_eval, test_examples, batch_size=64):
+    '''
+    Evaluates trained model.
+    '''
+    n_test_examples = len(test_examples)
+    loader = data_utils.Loader(test_examples, batch_size=batch_size)
+    acc = 0
+    n_samples = 0
+    for _ in range(n_test_examples // batch_size + 1):
+        batch_data = loader()
+        cur_batch_size = len(batch_data[-1])
+        n_samples += cur_batch_size
+        err = f_eval(*batch_data)
+        acc += err * cur_batch_size
+
+    return acc / n_samples
+
+
+def simulate(f_pred, f_prob, seeds, n_timesteps=20, G=None):
+    '''
+    Simulates a cascade given seeding nodes.
+    '''
+    sequence = seeds
+    # probs = []
+    for _ in range(n_timesteps):
+        # constructs input for current sequence.
+        example = data_utils.convert_cascade_to_examples(sequence, G=G,
+                                                         inference=True)
+        data_batch = data_utils.prepare_minibatch([example], inference=True)
+        pred = f_pred(*data_batch[:-1])[0]
+        # prob = f_prob(*data_batch[:-1])[0]
+        sequence += [pred]
+        # probs += [prob]
+
+    # print probs
+    return sequence
+
+
+def train(data_dir='data/digg/',
+          dim_proj=256,
+          n_words=20000,
           maxlen=50,
           batch_size=128,
           shuffle_for_batch=True,
-          learning_rate=0.001,
-          max_epochs=100,
+          learning_rate=0.0001,
+          global_steps=300000,
           disp_freq=100,
-          save_freq=100,
+          save_freq=1000,
+          test_freq=1000,
           saveto_file='params.npz',
+          weight_decay=0.0001,
           reload_model=False,
-          decay_lstm_W=0.01,
-          decay_lstm_U=0.01,
-          decay_lstm_b=0.01,
-          decay_Wout=0.01):
+          train=True):
     """
     Topo-LSTM model training.
     """
     options = locals().copy()
+    saveto = data_dir + saveto_file
 
     # creates and initializes shared variables.
     print 'Initializing variables...'
     params = init_params(options)
     if reload_model:
-        load_params('lstm_model.npz', params)
-
+        print 'reusing saved model.'
+        load_params(saveto, params)
     tparams = init_tparams(params)
 
-    # builds tprnn model
+    # builds Topo-LSTM model
     print 'Building model...'
-    input_list, labels, cost, f_prob, f_pred = tprnn_model.build_model(tparams, options)
+    model = tprnn_model.build_model(tparams, options)
 
-    # prepares training data.
-    print 'Loading data...'
-    training_examples, _ = read_data.load_cascade_examples(data_dir, dataset='train')
-    print 'Loaded %d training examples.' % len(training_examples)
-    batch_loader = read_data.Loader(training_examples,
-                                    batch_size=batch_size,
-                                    shuffle=shuffle_for_batch)
+    print 'Loading test data...'
+    G, node_index = data_utils.load_graph(data_dir)
+    test_examples = data_utils.load_examples(data_dir,
+                                             dataset='test',
+                                             node_index=node_index,
+                                             maxlen=maxlen,
+                                             G=G)
+    print 'Loaded %d test examples' % len(test_examples)
 
-    # training loop.
-    start_time = timeit.default_timer()
+    if train:
+        # prepares training data.
+        print 'Loading train data...'
+        train_examples = data_utils.load_examples(data_dir,
+                                                  dataset='train',
+                                                  node_index=node_index,
+                                                  maxlen=maxlen,
+                                                  G=G)
+        print 'Loaded %d training examples.' % len(train_examples)
 
-    downhill.minimize(
-        loss=cost,
-        algo='adam',
-        train=batch_loader,
-        params=tparams.values(),
-        inputs=input_list + [labels],
-        # patience=0,
-        max_gradient_clip=1,
-        # max_gradient_norm=1,
-        learning_rate=learning_rate,
-        monitor_gradients=False)
+        batch_loader = data_utils.Loader(train_examples,
+                                         batch_size=batch_size,
+                                         shuffle=shuffle_for_batch)
 
-    end_time = timeit.default_timer()
-    print 'time used: %d seconds.' % (end_time - start_time)
+        # compiles updates.
+        optimizer = downhill.build(algo='adam',
+                                   loss=model['cost'],
+                                   params=tparams.values(),
+                                   inputs=model['data'])
 
-    # dump model parameters.
-    params = unzip(tparams)
-    saveto = data_dir + saveto_file
-    np.savez(saveto, **params)
-    pickle.dump(options, open('%s.pkl' % saveto, 'wb'), -1)
+        updates = optimizer.get_updates(max_gradient_elem=5.,
+                                        learning_rate=learning_rate)
+
+        f_update = theano.function(model['data'],
+                                   model['cost'],
+                                   updates=list(updates))
+
+        # training loop.
+        start_time = timeit.default_timer()
+
+        # downhill.minimize(
+        #     loss=cost,
+        #     algo='adam',
+        #     train=batch_loader,
+        #     # inputs=input_list + [labels],
+        #     # params=tparams.values(),
+        #     # patience=0,
+        #     max_gradient_clip=1,
+        #     # max_gradient_norm=1,
+        #     learning_rate=learning_rate,
+        #     monitors=[('cost', cost)],
+        #     monitor_gradients=False)
+
+        n_examples = len(train_examples)
+        batches_per_epoch = n_examples // batch_size + 1
+        n_epochs = global_steps // batches_per_epoch + 1
+
+        global_step = 0
+        for _ in range(n_epochs):
+            for _ in range(batches_per_epoch):
+                cost = f_update(*batch_loader())
+
+                if global_step % disp_freq == 0:
+                    print 'global step %d, cost: %f' % (global_step, cost)
+
+                # dump model parameters.
+                if global_step % save_freq == 0:
+                    params = unzip(tparams)
+                    np.savez(saveto, **params)
+                    pickle.dump(options, open('%s.pkl' % saveto, 'wb'), -1)
+
+                if global_step % test_freq == 0:
+                    err = evaluate(model['f_eval'], test_examples)
+                    print 'test error: %f' % err
+
+                global_step += 1
+
+                # for debugging use.
+                # if global_step > 1000:
+                #     break
+
+        end_time = timeit.default_timer()
+        print 'time used: %d seconds.' % (end_time - start_time)
+
+    # runs some simulations for debugging.
+    test_example = test_examples[101]
+    sequence = test_example['sequence']
+    print 'true cascade: ', sequence
+
+    seeds = sequence[:3]
+    preds = simulate(model['f_pred'], model['f_prob'], seeds, G=G)
+    print 'simulated: ', preds
 
 
 if __name__ == '__main__':

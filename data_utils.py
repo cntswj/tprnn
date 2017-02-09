@@ -39,7 +39,6 @@ def load_graph(data_dir):
                     G.add_edge(u, v)
         pickle.dump(G, open(pkl_file, 'wb'))
 
-    print nx.info(G)
     return G, node_index
 
 

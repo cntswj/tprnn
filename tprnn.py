@@ -92,22 +92,28 @@ def load_params(path, params):
     return params
 
 
-def evaluate(f_eval, test_examples, batch_size=64):
+def top_k_accuracy(y_prob, y, k=10):
+    acc = []
+    for p_, y_ in zip(y_prob, y):
+        top_k = p_.argsort()[-k:][::-1]
+        acc += [1. if y_ in top_k else 0.]
+    return acc
+
+
+def evaluate(f_prob, test_examples, batch_size=64):
     '''
     Evaluates trained model.
     '''
     n_test_examples = len(test_examples)
     loader = data_utils.Loader(test_examples, batch_size=batch_size)
-    acc = 0
-    n_samples = 0
+    acc = []
     for _ in range(n_test_examples // batch_size + 1):
         batch_data = loader()
-        cur_batch_size = len(batch_data[-1])
-        n_samples += cur_batch_size
-        err = f_eval(*batch_data)
-        acc += err * cur_batch_size
+        labels = batch_data[-1]
+        prob = f_prob(*batch_data[:-1])
+        acc += top_k_accuracy(prob, labels)
 
-    return acc / n_samples
+    return sum(acc) / len(acc)
 
 
 def simulate(f_pred, f_prob, seeds, n_timesteps=20, G=None):
@@ -121,8 +127,10 @@ def simulate(f_pred, f_prob, seeds, n_timesteps=20, G=None):
         example = data_utils.convert_cascade_to_examples(sequence, G=G,
                                                          inference=True)
         data_batch = data_utils.prepare_minibatch([example], inference=True)
-        pred = f_pred(*data_batch[:-1])[0]
-        # prob = f_prob(*data_batch[:-1])[0]
+        prob = f_prob(*data_batch[:-1])[0]
+        prob[sequence] = 0.
+        prob /= prob.sum()
+        pred = np.random.choice(range(len(prob)), p=prob)
         sequence += [pred]
         # probs += [prob]
 
@@ -131,19 +139,19 @@ def simulate(f_pred, f_prob, seeds, n_timesteps=20, G=None):
 
 
 def train(data_dir='data/digg/',
-          dim_proj=256,
+          dim_proj=512,
           n_words=20000,
-          maxlen=50,
-          batch_size=128,
+          maxlen=20,
+          batch_size=256,
           shuffle_for_batch=True,
           learning_rate=0.0001,
-          global_steps=300000,
+          global_steps=50000,
           disp_freq=100,
           save_freq=1000,
           test_freq=1000,
           saveto_file='params.npz',
-          weight_decay=0.0001,
-          reload_model=False,
+          weight_decay=0.0005,
+          reload_model=True,
           train=True):
     """
     Topo-LSTM model training.
@@ -233,9 +241,10 @@ def train(data_dir='data/digg/',
                     np.savez(saveto, **params)
                     pickle.dump(options, open('%s.pkl' % saveto, 'wb'), -1)
 
+                # evaluate on test data.
                 if global_step % test_freq == 0:
-                    err = evaluate(model['f_eval'], test_examples)
-                    print 'test error: %f' % err
+                    score = evaluate(model['f_prob'], test_examples)
+                    print 'eval score: %f' % score
 
                 global_step += 1
 
@@ -246,8 +255,11 @@ def train(data_dir='data/digg/',
         end_time = timeit.default_timer()
         print 'time used: %d seconds.' % (end_time - start_time)
 
+    err = evaluate(model['f_prob'], test_examples)
+    print 'test error: %f' % err
+
     # runs some simulations for debugging.
-    test_example = test_examples[101]
+    test_example = test_examples[1000]
     sequence = test_example['sequence']
     print 'true cascade: ', sequence
 

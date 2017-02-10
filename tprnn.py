@@ -6,6 +6,7 @@ from collections import OrderedDict
 import timeit
 import six.moves.cPickle as pickle
 import downhill
+import metrics
 # import pdb
 # import pprint
 
@@ -92,14 +93,6 @@ def load_params(path, params):
     return params
 
 
-def top_k_accuracy(y_prob, y, k=10):
-    acc = []
-    for p_, y_ in zip(y_prob, y):
-        top_k = p_.argsort()[-k:][::-1]
-        acc += [1. if y_ in top_k else 0.]
-    return acc
-
-
 def evaluate(f_prob, test_examples, batch_size=64):
     '''
     Evaluates trained model.
@@ -111,7 +104,7 @@ def evaluate(f_prob, test_examples, batch_size=64):
         batch_data = loader()
         labels = batch_data[-1]
         prob = f_prob(*batch_data[:-1])
-        acc += top_k_accuracy(prob, labels)
+        acc += metrics.top_k_accuracy(prob, labels)
 
     return sum(acc) / len(acc)
 

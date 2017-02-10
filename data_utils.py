@@ -6,7 +6,7 @@ import networkx as nx
 import numpy as np
 import pickle
 # import pprint
-import theano
+from theano import config
 
 
 def load_graph(data_dir):
@@ -138,7 +138,7 @@ def prepare_minibatch(tuples, inference=False):
 
     # prepare topo-masks data
     topo_masks = [t['topo_mask'] for t in tuples]
-    topo_masks_tensor = np.zeros((n_timesteps, n_samples, n_timesteps)).astype(theano.config.floatX)
+    topo_masks_tensor = np.zeros((n_timesteps, n_samples, n_timesteps)).astype(config.floatX)
     for i, topo_mask in enumerate(topo_masks):
         topo_masks_tensor[: lengths[i], i, : lengths[i]] = topo_mask
 
@@ -150,7 +150,7 @@ def prepare_minibatch(tuples, inference=False):
         labels_vector = None
 
     # prepare sequence masks
-    seq_masks_matrix = np.zeros((n_timesteps, n_samples)).astype(theano.config.floatX)
+    seq_masks_matrix = np.zeros((n_timesteps, n_samples)).astype(config.floatX)
     for i, length in enumerate(lengths):
         seq_masks_matrix[: length, i] = 1.
 

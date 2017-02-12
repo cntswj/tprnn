@@ -9,8 +9,8 @@ def process_dataset(data_dir, dataset):
     filename = os.path.join(data_dir, dataset + '.txt')
     with open(filename, 'rb') as f:
         for line in f:
-            action, cascade = line.strip().split(' ', 1)
-            sequence = cascade.split(' ')[::2]
+            query, cascade = line.strip().split(' ', 1)
+            sequence = [query] + cascade.split(' ')[::2]
             if maxlen is not None:
                 sequence = sequence[:maxlen]
             node_set.update(sequence)

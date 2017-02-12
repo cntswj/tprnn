@@ -76,7 +76,7 @@ model.add(Dense(n_words, input_shape=(emb_size,)))
 model.add(Activation('softmax'))
 model.compile(loss='categorical_crossentropy', optimizer='adam')
 y_cat = np_utils.to_categorical(y)
-model.fit(X, y_cat, nb_epoch=100, verbose=1)
+model.fit(X, y_cat, nb_epoch=20, verbose=1)
 
 print 'testing...'
 # prob_test = model.predict_proba(X_test)

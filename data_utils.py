@@ -58,7 +58,7 @@ def convert_cascade_to_examples(sequence,
         dag.add_edges_from(
             [(v, node) for v in predecessors])
 
-        # adds chronological edges
+        # (optional) adds chronological edges
         if i > 0:
             dag.add_edge(sequence[i - 1], node)
 
@@ -70,11 +70,15 @@ def convert_cascade_to_examples(sequence,
 
         # compiles example from DAG.
         node_pos = {v: i for i, v in enumerate(prefix)}
-        sub_length = len(prefix)
-        topo_mask = np.zeros((sub_length, sub_length), dtype=np.int)
+        prefix_len = len(prefix)
+        topo_mask = np.zeros((prefix_len, prefix_len), dtype=np.int)
         for i_v, v in enumerate(prefix):
             i_p = [node_pos[x] for x in dag.predecessors(v)]
             topo_mask[i_v, i_p] = 1
+
+        neighborhoods = [G[v] for v in prefix]
+        all_neighbors = [w for neighbors in neighborhoods for w in neighbors]
+        frontier = list(set(all_neighbors) - set(prefix))
 
         if not inference:
             label = sequence[i + 1]
@@ -83,6 +87,7 @@ def convert_cascade_to_examples(sequence,
 
         example = {'sequence': prefix,
                    'topo_mask': topo_mask,
+                   'nbr_mask': frontier,
                    'label': label}
 
         if not inference:
@@ -108,8 +113,8 @@ def load_examples(data_dir, dataset=None, G=None, node_index=None, maxlen=None):
         with codecs.open(filename, 'r', encoding='utf-8') as input_file:
             for line_index, line in enumerate(input_file):
                 # parses the input line.
-                action, cascade = line.strip().split(' ', 1)
-                sequence = cascade.split(' ')[::2]
+                query, cascade = line.strip().split(' ', 1)
+                sequence = [query] + cascade.split(' ')[::2]
                 if maxlen is not None:
                     sequence = sequence[:maxlen]
                 sequence = [node_index[x] for x in sequence]
@@ -122,7 +127,7 @@ def load_examples(data_dir, dataset=None, G=None, node_index=None, maxlen=None):
     return examples
 
 
-def prepare_minibatch(tuples, inference=False):
+def prepare_minibatch(tuples, inference=False, n_words=None):
     '''
     produces a mini-batch of data in format required by model.
     '''
@@ -142,6 +147,17 @@ def prepare_minibatch(tuples, inference=False):
     for i, topo_mask in enumerate(topo_masks):
         topo_masks_tensor[: lengths[i], i, : lengths[i]] = topo_mask
 
+    # prepare sequence masks
+    seq_masks_matrix = np.zeros((n_timesteps, n_samples)).astype(config.floatX)
+    for i, length in enumerate(lengths):
+        seq_masks_matrix[: length, i] = 1.
+
+    # prepare neighborhood masks
+    nbr_masks = [t['nbr_mask'] for t in tuples]
+    nbr_masks_matrix = np.zeros((n_samples, n_words)).astype(config.floatX)
+    for i, nbr_mask in enumerate(nbr_masks):
+        nbr_masks_matrix[i, nbr_mask] = 1.
+
     # prepare labels data
     if not inference:
         labels = [t['label'] for t in tuples]
@@ -149,25 +165,25 @@ def prepare_minibatch(tuples, inference=False):
     else:
         labels_vector = None
 
-    # prepare sequence masks
-    seq_masks_matrix = np.zeros((n_timesteps, n_samples)).astype(config.floatX)
-    for i, length in enumerate(lengths):
-        seq_masks_matrix[: length, i] = 1.
-
-    return (seqs_matrix, seq_masks_matrix, topo_masks_tensor, labels_vector)
+    return (seqs_matrix,
+            seq_masks_matrix,
+            topo_masks_tensor,
+            nbr_masks_matrix,
+            labels_vector)
 
 
 class Loader:
-    def __init__(self, data, batch_size=64, shuffle=False):
+    def __init__(self, data, batch_size=64, shuffle=False, n_words=None):
         self.batch_size = batch_size
         self.idx = 0
         self.data = data
         self.shuffle = shuffle
         self.n = len(data)
+        self.n_words = n_words
         self.indices = np.arange(self.n, dtype="int32")
 
     def __len__(self):
-        return len(self.data) // self.batch_size
+        return len(self.data) // self.batch_size + 1
 
     def __call__(self):
         if self.shuffle and self.idx == 0:
@@ -180,4 +196,4 @@ class Loader:
         if self.idx >= self.n:
             self.idx = 0
 
-        return prepare_minibatch(batch_examples)
+        return prepare_minibatch(batch_examples, n_words=self.n_words)

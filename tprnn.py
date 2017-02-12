@@ -1,4 +1,5 @@
 import numpy as np
+import networkx as nx
 import theano
 # from theano import tensor
 from theano import config
@@ -52,13 +53,21 @@ def init_params(options):
     lstm_b = np.zeros((4 * options['dim_proj'],))
     params['lstm_b'] = lstm_b.astype(config.floatX)
 
-    # decoding matrix
+    # decoding matrix for neighboring influences
     randn = np.random.randn(options['dim_proj'],
                             options['n_words'])
-    params['dec_W'] = (0.1 * randn).astype(config.floatX)
+    params['W_nbr'] = (0.1 * randn).astype(config.floatX)
 
     dec_b = np.zeros(options['n_words'])
-    params['dec_b'] = dec_b.astype(config.floatX)
+    params['b_nbr'] = dec_b.astype(config.floatX)
+
+    # decoding matrix for external influences
+    randn = np.random.randn(options['dim_proj'],
+                            options['n_words'])
+    params['W_ext'] = (0.1 * randn).astype(config.floatX)
+
+    dec_b = np.zeros(options['n_words'])
+    params['b_ext'] = dec_b.astype(config.floatX)
 
     return params
 
@@ -93,17 +102,25 @@ def load_params(path, params):
     return params
 
 
-def evaluate(f_prob, test_examples, batch_size=64):
+def evaluate(f_prob, test_loader):
     '''
     Evaluates trained model.
     '''
-    n_test_examples = len(test_examples)
-    loader = data_utils.Loader(test_examples, batch_size=batch_size)
+    n_batches = len(test_loader)
     acc = []
-    for _ in range(n_test_examples // batch_size + 1):
-        batch_data = loader()
+    for _ in range(n_batches):
+        batch_data = test_loader()
         labels = batch_data[-1]
         prob = f_prob(*batch_data[:-1])
+
+        # excludes activated nodes when predicting.
+        for i, p in enumerate(prob):
+            length = int(np.sum(batch_data[1][:, i]))
+            sequence = batch_data[0][: length, i]
+            assert labels[i] not in sequence, str(sequence) + str(labels[i])
+            p[sequence] = 0.
+            prob[i, :] = p / np.sum(p)
+
         acc += metrics.top_k_accuracy(prob, labels)
 
     return sum(acc) / len(acc)
@@ -133,24 +150,30 @@ def simulate(f_pred, f_prob, seeds, n_timesteps=20, G=None):
 
 def train(data_dir='data/digg/',
           dim_proj=512,
-          n_words=20000,
-          maxlen=20,
+          maxlen=30,
           batch_size=256,
           shuffle_for_batch=True,
           learning_rate=0.0001,
-          global_steps=50000,
+          global_steps=30000,
           disp_freq=100,
           save_freq=1000,
           test_freq=1000,
           saveto_file='params.npz',
           weight_decay=0.0005,
-          reload_model=True,
+          reload_model=False,
           train=True):
     """
     Topo-LSTM model training.
     """
     options = locals().copy()
     saveto = data_dir + saveto_file
+
+    # loads graph
+    G, node_index = data_utils.load_graph(data_dir)
+    print nx.info(G)
+    options['n_words'] = len(node_index)
+
+    print options
 
     # creates and initializes shared variables.
     print 'Initializing variables...'
@@ -165,12 +188,14 @@ def train(data_dir='data/digg/',
     model = tprnn_model.build_model(tparams, options)
 
     print 'Loading test data...'
-    G, node_index = data_utils.load_graph(data_dir)
     test_examples = data_utils.load_examples(data_dir,
                                              dataset='test',
                                              node_index=node_index,
                                              maxlen=maxlen,
                                              G=G)
+    test_loader = data_utils.Loader(test_examples,
+                                    batch_size=options['batch_size'],
+                                    n_words=options['n_words'])
     print 'Loaded %d test examples' % len(test_examples)
 
     if train:
@@ -181,11 +206,11 @@ def train(data_dir='data/digg/',
                                                   node_index=node_index,
                                                   maxlen=maxlen,
                                                   G=G)
-        print 'Loaded %d training examples.' % len(train_examples)
-
-        batch_loader = data_utils.Loader(train_examples,
-                                         batch_size=batch_size,
+        train_loader = data_utils.Loader(train_examples,
+                                         n_words=options['n_words'],
+                                         batch_size=options['batch_size'],
                                          shuffle=shuffle_for_batch)
+        print 'Loaded %d training examples.' % len(train_examples)
 
         # compiles updates.
         optimizer = downhill.build(algo='adam',
@@ -206,7 +231,7 @@ def train(data_dir='data/digg/',
         # downhill.minimize(
         #     loss=cost,
         #     algo='adam',
-        #     train=batch_loader,
+        #     train=train_loader,
         #     # inputs=input_list + [labels],
         #     # params=tparams.values(),
         #     # patience=0,
@@ -217,13 +242,13 @@ def train(data_dir='data/digg/',
         #     monitor_gradients=False)
 
         n_examples = len(train_examples)
-        batches_per_epoch = n_examples // batch_size + 1
+        batches_per_epoch = n_examples // options['batch_size'] + 1
         n_epochs = global_steps // batches_per_epoch + 1
 
         global_step = 0
         for _ in range(n_epochs):
             for _ in range(batches_per_epoch):
-                cost = f_update(*batch_loader())
+                cost = f_update(*train_loader())
 
                 if global_step % disp_freq == 0:
                     print 'global step %d, cost: %f' % (global_step, cost)
@@ -236,7 +261,7 @@ def train(data_dir='data/digg/',
 
                 # evaluate on test data.
                 if global_step % test_freq == 0:
-                    score = evaluate(model['f_prob'], test_examples)
+                    score = evaluate(model['f_prob'], test_loader)
                     print 'eval score: %f' % score
 
                 global_step += 1
@@ -248,7 +273,7 @@ def train(data_dir='data/digg/',
         end_time = timeit.default_timer()
         print 'time used: %d seconds.' % (end_time - start_time)
 
-    err = evaluate(model['f_prob'], test_examples)
+    err = evaluate(model['f_prob'], test_loader)
     print 'test error: %f' % err
 
     # runs some simulations for debugging.

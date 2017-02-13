@@ -4,22 +4,32 @@ import numpy as np
 
 from keras.models import Sequential
 from keras.layers.core import Dense, Activation
+from keras.models import load_model
 from keras.utils import np_utils
 import metrics
 
-data_dir = 'data/digg'
+data_dir = 'data/dblp'
 emb_size = 64
+save_path = os.path.join(data_dir, 'emb.h5')
+
+print data_dir
 
 
 def load_embedding():
     embeddings = {}
+
+    nodes_file = os.path.join(data_dir, 'seen_nodes.txt')
+    with open(nodes_file, 'rb') as f:
+        for line in f:
+            embeddings[line.strip()] = np.zeros(emb_size)
+
     filepath = os.path.join(data_dir, 'deepwalk.txt')
     with open(filepath, 'rb') as f:
         for line in f:
             v, emb = line.strip().split(' ', 1)
             emb = map(float, emb.split())
             embeddings[v] = emb
-    print len(embeddings)
+
     return embeddings
 
 
@@ -63,28 +73,38 @@ def load_dataset(dataset=None, maxlen=30):
     return X, y
 
 
-print 'creating dataset...'
-X, y = load_dataset(dataset='train')
-X_test, y_test = load_dataset(dataset='test')
-
 print 'training...'
-# model = LogisticRegression()
-# model.fit(X, y)
-n_words = len(node_map)
-model = Sequential()
-model.add(Dense(n_words, input_shape=(emb_size,)))
-model.add(Activation('softmax'))
-model.compile(loss='categorical_crossentropy', optimizer='adam')
+if os.path.isfile(save_path):
+    model = load_model(save_path)
+else:
+    # model = LogisticRegression()
+    # model.fit(X, y)
+
+    n_words = len(node_map)
+    model = Sequential()
+    model.add(Dense(n_words, input_shape=(emb_size,)))
+    model.add(Activation('softmax'))
+    model.compile(loss='categorical_crossentropy', optimizer='adam')
+
+X, y = load_dataset(dataset='train')
 y_cat = np_utils.to_categorical(y)
-model.fit(X, y_cat, nb_epoch=20, verbose=1)
+model.fit(X, y_cat, nb_epoch=30, verbose=1)
+model.save(save_path)
 
 print 'testing...'
 # prob_test = model.predict_proba(X_test)
+X_test, y_test = load_dataset(dataset='test')
 y_prob = model.predict_proba(X_test)
 
 # n_classes = len(model.classes_)
 # class_map = {c: i for i, c in enumerate(model.classes_)}
 # y_test = [class_map[c] if c in class_map else -1 for c in y_test]
 
-acc = metrics.top_k_accuracy(y_prob, y_test)
+acc = metrics.top_k_accuracy(y_prob, y_test, k=10)
+print np.array(acc).mean()
+
+acc = metrics.top_k_accuracy(y_prob, y_test, k=50)
+print np.array(acc).mean()
+
+acc = metrics.top_k_accuracy(y_prob, y_test, k=100)
 print np.array(acc).mean()

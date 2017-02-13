@@ -8,8 +8,8 @@ output = os.path.join(data_dir, dataset + '_sorted.txt')
 with open(filepath, 'rb') as f, open(output, 'wb') as fo:
     for line in f:
         query, cascade = line.strip().split(' ', 1)
-        timestamps = map(int, cascade.split(' ')[1::2])
-        sequence = cascade.split(' ')[::2]
+        timestamps = [0] + map(lambda x: int(float(x)), cascade.split(' ')[1::2])
+        sequence = [query] + cascade.split(' ')[::2]
 
         # sort by timestamps and keep unique nodes.
         ordered = sorted(zip(sequence, timestamps), key=lambda x: x[1])
@@ -23,5 +23,5 @@ with open(filepath, 'rb') as f, open(output, 'wb') as fo:
             continue
 
         fo.write(query + ' ')
-        fo.write(' '.join(['%s %d' % (v, t) for v, t in ordered_unique]))
+        fo.write(' '.join(['%s %d' % (v, t) for v, t in ordered_unique[1:]]))
         fo.write('\n')

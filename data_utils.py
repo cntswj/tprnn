@@ -127,7 +127,7 @@ def load_examples(data_dir, dataset=None, G=None, node_index=None, maxlen=None):
     return examples
 
 
-def prepare_minibatch(tuples, inference=False, n_words=None):
+def prepare_minibatch(tuples, inference=False, options=None):
     '''
     produces a mini-batch of data in format required by model.
     '''
@@ -135,6 +135,7 @@ def prepare_minibatch(tuples, inference=False, n_words=None):
     lengths = map(len, seqs)
     n_timesteps = max(lengths)
     n_samples = len(tuples)
+    n_words = options['n_words']
 
     # prepare sequences data
     seqs_matrix = np.zeros((n_timesteps, n_samples)).astype('int32')
@@ -153,10 +154,11 @@ def prepare_minibatch(tuples, inference=False, n_words=None):
         seq_masks_matrix[: length, i] = 1.
 
     # prepare neighborhood masks
-    nbr_masks = [t['nbr_mask'] for t in tuples]
-    nbr_masks_matrix = np.zeros((n_samples, n_words)).astype(config.floatX)
-    for i, nbr_mask in enumerate(nbr_masks):
-        nbr_masks_matrix[i, nbr_mask] = 1.
+    if options['neighbor_sensitive']:
+        nbr_masks = [t['nbr_mask'] for t in tuples]
+        nbr_masks_matrix = np.zeros((n_samples, n_words)).astype(config.floatX)
+        for i, nbr_mask in enumerate(nbr_masks):
+            nbr_masks_matrix[i, nbr_mask] = 1.
 
     # prepare labels data
     if not inference:
@@ -165,22 +167,29 @@ def prepare_minibatch(tuples, inference=False, n_words=None):
     else:
         labels_vector = None
 
-    return (seqs_matrix,
-            seq_masks_matrix,
-            topo_masks_tensor,
-            nbr_masks_matrix,
-            labels_vector)
+    if options['neighbor_sensitive']:
+        return (seqs_matrix,
+                seq_masks_matrix,
+                topo_masks_tensor,
+                nbr_masks_matrix,
+                labels_vector)
+    else:
+        return (seqs_matrix,
+                seq_masks_matrix,
+                topo_masks_tensor,
+                labels_vector)
 
 
 class Loader:
-    def __init__(self, data, batch_size=64, shuffle=False, n_words=None):
-        self.batch_size = batch_size
+    def __init__(self, data, options=None):
+        self.batch_size = options['batch_size']
         self.idx = 0
         self.data = data
-        self.shuffle = shuffle
+        self.shuffle = options['shuffle_data']
         self.n = len(data)
-        self.n_words = n_words
+        self.n_words = options['n_words']
         self.indices = np.arange(self.n, dtype="int32")
+        self.options = options
 
     def __len__(self):
         return len(self.data) // self.batch_size + 1
@@ -196,4 +205,6 @@ class Loader:
         if self.idx >= self.n:
             self.idx = 0
 
-        return prepare_minibatch(batch_examples, n_words=self.n_words)
+        return prepare_minibatch(batch_examples,
+                                 inference=False,
+                                 options=self.options)

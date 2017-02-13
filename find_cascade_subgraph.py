@@ -1,7 +1,7 @@
 import os
 
 maxlen = 50
-data_dir = 'data/twitter'
+data_dir = 'data/memes'
 
 
 def process_dataset(data_dir, dataset):

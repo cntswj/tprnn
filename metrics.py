@@ -1,4 +1,6 @@
-import numpy as np
+'''
+Evaluation metrics functions.
+'''
 
 
 def top_k_accuracy(y_prob, y, k=10):

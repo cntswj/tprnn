@@ -4,11 +4,13 @@ import numpy as np
 import os
 
 import data_utils
-from tprnn import top_k_accuracy
+from metrics import top_k_accuracy
 
-data_dir = 'data/dblp'
+data_dir = 'data/digg'
 maxlen = 30
 method = 'ic'
+
+random.seed(0)
 
 
 def ic_pred_probs(sequence, G=None):
@@ -17,7 +19,7 @@ def ic_pred_probs(sequence, G=None):
     Assuming G's nodes have indexes in [0, N-1].
     '''
     N = len(G.nodes())
-    prob_comp = np.zeros(N)
+    prob_comp = np.ones(N)
     result = []
 
     for i, src in enumerate(sequence):
@@ -46,13 +48,13 @@ def lt_pred_probs(sequence, G=None, tol=0.0001):
         for target, atrbs in G[src].iteritems():
             edge_prob = atrbs['weight']
             if thresholds[target] > 1.:
-                thresholds[target] = random.random()
+                thresholds[target] = random.random() * 0.
             acc[target] += edge_prob
 
         prob = acc
         prob[thresholds > 1.] = 0.
         prob[prob < thresholds + tol] = 0.
-        prob[prob > 0] = 1.
+        # prob[prob > 0] = 1.
         prob /= np.sum(prob)
 
         result += [prob]
@@ -84,6 +86,6 @@ with open(input_test_file, 'rb') as f:
         sequence = [node_index[x] for x in sequence]
         prob = lt_pred_probs(sequence[:-1], G=G)
         y = sequence[1:]
-        scores.extend(top_k_accuracy(prob, y))
+        scores.extend(top_k_accuracy(prob, y, k=10))
 
 print sum(scores) / len(scores)

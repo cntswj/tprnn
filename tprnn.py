@@ -53,21 +53,20 @@ def init_params(options):
     lstm_b = np.zeros((4 * options['dim_proj'],))
     params['lstm_b'] = lstm_b.astype(config.floatX)
 
-    # decoding matrix for neighboring influences
-    randn = np.random.randn(options['dim_proj'],
-                            options['n_words'])
-    params['W_nbr'] = (0.1 * randn).astype(config.floatX)
-
-    dec_b = np.zeros(options['n_words'])
-    params['b_nbr'] = dec_b.astype(config.floatX)
-
     # decoding matrix for external influences
     randn = np.random.randn(options['dim_proj'],
                             options['n_words'])
     params['W_ext'] = (0.1 * randn).astype(config.floatX)
-
     dec_b = np.zeros(options['n_words'])
     params['b_ext'] = dec_b.astype(config.floatX)
+
+    # decoding matrix for neighborhood influences
+    if options['neighbor_sensitive']:
+        randn = np.random.randn(options['dim_proj'],
+                                options['n_words'])
+        params['W_nbr'] = (0.1 * randn).astype(config.floatX)
+        dec_b = np.zeros(options['n_words'])
+        params['b_nbr'] = dec_b.astype(config.floatX)
 
     return params
 
@@ -102,7 +101,7 @@ def load_params(path, params):
     return params
 
 
-def evaluate(f_prob, test_loader):
+def evaluate(f_prob, test_loader, k=10):
     '''
     Evaluates trained model.
     '''
@@ -121,40 +120,41 @@ def evaluate(f_prob, test_loader):
             p[sequence] = 0.
             prob[i, :] = p / np.sum(p)
 
-        acc += metrics.top_k_accuracy(prob, labels)
+        acc += metrics.top_k_accuracy(prob, labels, k=k)
 
     return sum(acc) / len(acc)
 
 
-def simulate(f_pred, f_prob, seeds, n_timesteps=20, G=None):
-    '''
-    Simulates a cascade given seeding nodes.
-    '''
-    sequence = seeds
-    # probs = []
-    for _ in range(n_timesteps):
-        # constructs input for current sequence.
-        example = data_utils.convert_cascade_to_examples(sequence, G=G,
-                                                         inference=True)
-        data_batch = data_utils.prepare_minibatch([example], inference=True)
-        prob = f_prob(*data_batch[:-1])[0]
-        prob[sequence] = 0.
-        prob /= prob.sum()
-        pred = np.random.choice(range(len(prob)), p=prob)
-        sequence += [pred]
-        # probs += [prob]
+# def simulate(f_pred, f_prob, seeds, n_timesteps=20, G=None, options=None):
+#     '''
+#     Simulates a cascade given seeding nodes.
+#     '''
+#     sequence = seeds
+#     # probs = []
+#     for _ in range(n_timesteps):
+#         # constructs input for current sequence.
+#         example = data_utils.convert_cascade_to_examples(sequence, G=G,
+#                                                          inference=True)
+#         data_batch = data_utils.prepare_minibatch([example], inference=True, options=options)
+#         prob = f_prob(*data_batch[:-1])[0]
+#         prob[sequence] = 0.
+#         prob /= prob.sum()
+#         pred = np.random.choice(range(len(prob)), p=prob)
+#         sequence += [pred]
+#         # probs += [prob]
 
-    # print probs
-    return sequence
+#     # print probs
+#     return sequence
 
 
-def train(data_dir='data/digg/',
+def train(data_dir='data/memes/',
+          neighbor_sensitive=True,
           dim_proj=512,
           maxlen=30,
           batch_size=256,
-          shuffle_for_batch=True,
-          learning_rate=0.0001,
-          global_steps=30000,
+          shuffle_data=True,
+          learning_rate=0.001,
+          global_steps=50000,
           disp_freq=100,
           save_freq=1000,
           test_freq=1000,
@@ -193,9 +193,7 @@ def train(data_dir='data/digg/',
                                              node_index=node_index,
                                              maxlen=maxlen,
                                              G=G)
-    test_loader = data_utils.Loader(test_examples,
-                                    batch_size=options['batch_size'],
-                                    n_words=options['n_words'])
+    test_loader = data_utils.Loader(test_examples, options=options)
     print 'Loaded %d test examples' % len(test_examples)
 
     if train:
@@ -206,10 +204,7 @@ def train(data_dir='data/digg/',
                                                   node_index=node_index,
                                                   maxlen=maxlen,
                                                   G=G)
-        train_loader = data_utils.Loader(train_examples,
-                                         n_words=options['n_words'],
-                                         batch_size=options['batch_size'],
-                                         shuffle=shuffle_for_batch)
+        train_loader = data_utils.Loader(train_examples, options=options)
         print 'Loaded %d training examples.' % len(train_examples)
 
         # compiles updates.
@@ -261,7 +256,13 @@ def train(data_dir='data/digg/',
 
                 # evaluate on test data.
                 if global_step % test_freq == 0:
-                    score = evaluate(model['f_prob'], test_loader)
+                    score = evaluate(model['f_prob'], test_loader, k=10)
+                    print 'eval score: %f' % score
+
+                    score = evaluate(model['f_prob'], test_loader, k=50)
+                    print 'eval score: %f' % score
+
+                    score = evaluate(model['f_prob'], test_loader, k=100)
                     print 'eval score: %f' % score
 
                 global_step += 1
@@ -277,13 +278,13 @@ def train(data_dir='data/digg/',
     print 'test error: %f' % err
 
     # runs some simulations for debugging.
-    test_example = test_examples[1000]
-    sequence = test_example['sequence']
-    print 'true cascade: ', sequence
+    # test_example = test_examples[1000]
+    # sequence = test_example['sequence']
+    # print 'true cascade: ', sequence
 
-    seeds = sequence[:3]
-    preds = simulate(model['f_pred'], model['f_prob'], seeds, G=G)
-    print 'simulated: ', preds
+    # seeds = sequence[:3]
+    # preds = simulate(model['f_pred'], model['f_prob'], seeds, G=G, n_words=options['n_words'])
+    # print 'simulated: ', preds
 
 
 if __name__ == '__main__':

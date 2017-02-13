@@ -153,14 +153,14 @@ def train(data_dir='data/memes/',
           maxlen=30,
           batch_size=256,
           shuffle_data=True,
-          learning_rate=0.001,
+          learning_rate=0.0001,
           global_steps=50000,
           disp_freq=100,
           save_freq=1000,
           test_freq=1000,
           saveto_file='params.npz',
           weight_decay=0.0005,
-          reload_model=False,
+          reload_model=True,
           train=True):
     """
     Topo-LSTM model training.

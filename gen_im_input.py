@@ -2,7 +2,7 @@ import os
 
 # Convert cascades to graph file.
 
-data_dir = 'data/twitter'
+data_dir = 'data/memes'
 maxlen = 30
 infer_graph_from_cascades = True
 

@@ -1,15 +1,9 @@
-#!/usr/bin/env python
-# coding=utf-8
-
 from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
 # import sys
-# import os
 # import time
-import math
-import logging
 import random
 import os
 # import numpy as np
@@ -19,16 +13,18 @@ import numpy as np
 
 from metrics import top_k_accuracy
 
+random.seed(0)
+
 flags = tf.app.flags
 
-flags.DEFINE_string("data_dir", 'data/twitter', "data directory.")
-flags.DEFINE_integer("max_epoch", 10, "max epochs.")
-flags.DEFINE_integer("max_batches", 50000, "max batches.")
-flags.DEFINE_integer("emb_dim", 64, "embedding dimension.")
-flags.DEFINE_float("lr", 0.001, "initial learning rate.")
+flags.DEFINE_string("data_dir", 'data/memes', "data directory.")
+flags.DEFINE_integer("max_samples", 300000, "max number of samples.")
+flags.DEFINE_integer("emb_dim", 25, "embedding dimension.")
 flags.DEFINE_integer("disp_freq", 100, "frequency to output.")
-flags.DEFINE_integer("save_freq", 1000, "frequency to save model.")
-flags.DEFINE_boolean("reload_model", 1, "whether to reuse saved model.")
+flags.DEFINE_integer("save_freq", 1000, "frequency to save.")
+flags.DEFINE_integer("test_freq", 10000, "frequency to evaluate.")
+flags.DEFINE_float("lr", 0.001, "initial learning rate.")
+flags.DEFINE_boolean("reload_model", 0, "whether to reuse saved model.")
 
 FLAGS = flags.FLAGS
 
@@ -44,13 +40,13 @@ class Options(object):
         self.test_data = os.path.join(FLAGS.data_dir, 'test.txt')
         self.save_path = os.path.join(FLAGS.data_dir, 'embedded_ic/embedded_ic.ckpt')
 
-        self.max_epoch = FLAGS.max_epoch
-        self.max_batches = FLAGS.max_batches
+        self.max_samples = FLAGS.max_samples
 
         self.lr = FLAGS.lr
 
         self.disp_freq = FLAGS.disp_freq
         self.save_freq = FLAGS.save_freq
+        self.test_freq = FLAGS.test_freq
 
         self.reload_model = FLAGS.reload_model
 
@@ -70,43 +66,31 @@ class Embedded_IC(object):
         self._test_cascades = self._readFromFile(options.test_data)
         self._options.train_size = len(self._train_cascades)
         self._options.test_size = len(self._test_cascades)
-
         self.buildGraph()
 
-        self.saver = tf.train.Saver()
         if options.reload_model:
             self.saver.restore(session, options.save_path)
 
+    def _getUsers(self, datafile):
+        user_set = set()
+        for line in open(datafile, 'rb'):
+            if len(line.strip()) == 0:
+                continue
+            query, cascade = line.strip().split(' ', 1)
+            users = [query] + cascade.split()[::2][:self._maxlen]
+            user_set.update(users)
+
+        return user_set
+
     def _buildIndex(self):
-        # compute an index of the users that appear at least once in the training and testing cascades.
+        """
+        compute an index of the users that appear at least once in the training and testing cascades.
+        """
         opts = self._options
-
-        train_user_set = set()
-        test_user_set = set()
-
-        for line in open(opts.train_data):
-            if len(line.strip()) == 0:
-                continue
-            query, cascade = line.strip().split(' ', 1)
-            users = [query] + cascade.split()[::2][:self._maxlen]
-            train_user_set.update(users)
-
-        for line in open(opts.test_data):
-            if len(line.strip()) == 0:
-                continue
-            query, cascade = line.strip().split(' ', 1)
-            users = [query] + cascade.split()[::2][:self._maxlen]
-            train_user_set.update(users)
-
-        user_set = train_user_set | test_user_set
-
-        pos = 0
-        for user in user_set:
-            self._u2idx[user] = pos
-            pos += 1
-            self._idx2u.append(user)
+        user_set = self._getUsers(opts.train_data) | self._getUsers(opts.test_data)
+        self._idx2u = list(user_set)
+        self._u2idx = {u: i for i, u in enumerate(self._idx2u)}
         opts.user_size = len(user_set)
-        logging.info("user_size : %d" % (opts.user_size))
 
     def _readFromFile(self, filename):
         """read all cascade from training or testing files. """
@@ -130,8 +114,8 @@ class Embedded_IC(object):
         p_v_hat = tf.placeholder(tf.float32, shape=())
         p_uv_hat = tf.placeholder(tf.float32, shape=())
 
-        emb_user = tf.Variable(tf.random_uniform([opts.user_size, opts.emb_dim], -0.1, 0.1), name="emb_user")
-        global_step = tf.Variable(0, trainable=False, name="global_step", dtype=tf.int32)
+        emb_user = tf.Variable(tf.random_uniform([opts.user_size, opts.emb_dim], -0.1, 0.1),
+                               name="emb_user")
 
         u_emb = tf.nn.embedding_lookup(emb_user, u)
         v_emb = tf.nn.embedding_lookup(emb_user, v)
@@ -149,25 +133,24 @@ class Embedded_IC(object):
 
         f = tf.sigmoid(-x)
         f_all = tf.sigmoid(-x_all)
-        # one = tf.convert_to_tensor(1.0, dtype = tf.float32)
 
         loss1 = -(1.0 - p_uv_hat / p_v_hat) * tf.log(1.0 - f) - (p_uv_hat / p_v_hat) * tf.log(f)
         loss2 = -tf.log(1.0 - f)
 
-        lr = tf.train.exponential_decay(opts.lr, global_step, 1000, 0.96, staircase=True)
+        tvars = tf.trainable_variables()
+        grads1, _ = tf.clip_by_value(tf.gradients(loss1, tvars), -5., 5.)
+        grads2, _ = tf.clip_by_value(tf.gradients(loss2, tvars), -5., 5.)
 
-        train1 = tf.train.AdamOptimizer(lr).minimize(loss1, global_step=global_step)
-        train2 = tf.train.AdamOptimizer(lr).minimize(loss2, global_step=global_step)
+        train1 = tf.train.AdamOptimizer(opts.lr).apply_gradients(zip(grads1, tvars))
+        train2 = tf.train.AdamOptimizer(opts.lr).apply_gradients(zip(grads2, tvars))
 
         self.u = u
         self.v = v
         self.p_uv_hat = p_uv_hat
         self.p_v_hat = p_v_hat
         self.emb_user = emb_user
-        self.global_step = global_step
         self.p_uv = f
         self.p_u_all = f_all
-        self.lr = lr
         self.loss1 = loss1
         self.loss2 = loss2
         self.train1 = train1
@@ -182,7 +165,10 @@ class Embedded_IC(object):
         return random.randint(0, opts.train_size - 1)
 
     def SampleV(self, cascadeId):
-        """sample a user V, which can not be the initial user of the given cascade."""
+        """
+        sample a user V, which can not be the initial user of the given cascade.
+        with 0.5 probability V is in the given cascade (positive sample).
+        """
         opts = self._options
         c = self._train_cascades[cascadeId]
         if random.random() < 0.5:
@@ -198,7 +184,7 @@ class Embedded_IC(object):
         return v_in_cascade, idx
 
     def SampleU(self, cascadeId, vId):
-        """sample all users u for sampled cascade and user v."""
+        """sample users u given sampled cascade and user v."""
         ulist = []
         for user in self._train_cascades[cascadeId]:
             if user == vId:
@@ -208,6 +194,7 @@ class Embedded_IC(object):
         return ulist
 
     def computePv(self, v, ul):
+        '''computes \hat{P}_v'''
         pv = 1.0
         assert len(ul) > 0, (v, ul)
         for u in ul:
@@ -217,61 +204,61 @@ class Embedded_IC(object):
         p_v = 1.0 - pv
         return p_v
 
-    def compute_ll(self):
-        opts = self._options
-        ll = 0.0
-        for i in xrange(opts.train_size):
-            cur = self._train_cascades[i]
+    # def compute_ll(self):
+    #     opts = self._options
+    #     ll = 0.0
+    #     for i in xrange(opts.train_size):
+    #         cur = self._train_cascades[i]
 
-            # nodes in the cascade.
-            for j in xrange(1, len(cur)):
-                ll += math.log(self.computePv(cur[j], cur[:j]) + 1e-8)
+    #         # nodes in the cascade.
+    #         for j in xrange(1, len(cur)):
+    #             ll += math.log(self.computePv(cur[j], cur[:j]))
 
-            # nodes not in the cascade.
-            uset = set(self._train_cascades[i])
-            u_set = set(self._idx2u) - uset
-            for user in u_set:
-                ll += math.log(1 - self.computePv(user, cur) + 1e-8)
+    #         # nodes not in the cascade.
+    #         uset = set(self._train_cascades[i])
+    #         u_set = set(self._idx2u) - uset
+    #         for user in u_set:
+    #             ll += math.log(1 - self.computePv(user, cur))
 
-        return ll
+    #     return ll
 
     def train(self):
         """train the model."""
         opts = self._options
-        # loss_list = []
-        # oldL = float("-inf")
-
-        n_pairs = 0
-        for _ in xrange(opts.max_batches):
+        n_samples = 0
+        for _ in xrange(opts.max_samples):
             cascade_id = self.SampleCascade()
             v_in_cascade, v_id = self.SampleV(cascade_id)
             u_id_list = self.SampleU(cascade_id, v_id)
             if v_in_cascade:
-                # print(self._train_cascades[cascade_id], v_id, u_id_list)
                 p_v_hat = self.computePv(v_id, u_id_list)
                 for u in u_id_list:
-                    p_uv_hat = self._session.run(self.p_uv, feed_dict={self.u: u, self.v: v_id})
-                    feed_dict = {self.u: u, self.v: v_id, self.p_uv_hat: p_uv_hat, self.p_v_hat: p_v_hat}
-                    (lr, loss, step, _) = self._session.run([self.lr, self.loss1, self.global_step, self.train1],
-                                                            feed_dict=feed_dict)
+                    p_uv_hat = self._session.run(self.p_uv,
+                                                 feed_dict={self.u: u, self.v: v_id})
+                    loss, _ = self._session.run([self.loss1, self.train1],
+                                                feed_dict={self.u: u,
+                                                           self.v: v_id,
+                                                           self.p_uv_hat:
+                                                           p_uv_hat,
+                                                           self.p_v_hat: p_v_hat})
             else:
                 for u in u_id_list:
-                    feed_dict = {self.u: u, self.v: v_id}
-                    (lr, loss, step, _) = self._session.run([self.lr, self.loss2, self.global_step, self.train2],
-                                                            feed_dict=feed_dict)
-            # loss_list.append(loss)
-            if n_pairs % opts.disp_freq == 0:
-                print(n_pairs, loss)
-            #     L = self.compute_ll()
-            #     print('Step %, ll=%f' % (global_step, L))
-            #     if L < oldL:
-            #         break
-            if n_pairs % opts.save_freq == 0:
-                self.saver.save(self._session, opts.save_path)
+                    loss, _ = self._session.run([self.loss2, self.train2],
+                                                feed_dict={self.u: u, self.v: v_id})
 
-            n_pairs += 1
+            n_samples += 1
+
+            if n_samples % opts.disp_freq == 0:
+                print('step %d, loss=%f' % (n_samples, loss))
+            if n_samples % opts.save_freq == 0:
+                self.saver.save(self._session, opts.save_path)
+            if n_samples % opts.test_freq == 0:
+                print(self.evaluate(k=10))
+                print(self.evaluate(k=50))
+                print(self.evaluate(k=100))
 
     def evaluate(self, k=10):
+        '''evaluate the model.'''
         acc_list = []
         for c in self._test_cascades:
             p = np.ones(self._n_words)
@@ -288,15 +275,10 @@ class Embedded_IC(object):
 
 
 def main(_):
-    logging.basicConfig(level=logging.INFO)
-    # if not FLAGS.train_data:
-    #    logging.error("train file not found.")
-    #    sys.exit(1)
     options = Options()
     with tf.Graph().as_default(), tf.Session() as session:
         model = Embedded_IC(options, session)
         model.train()
-        print(model.evaluate(k=10))
 
 
 if __name__ == "__main__":

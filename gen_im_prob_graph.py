@@ -7,11 +7,11 @@ from igraph import *
 parser = argparse.ArgumentParser(description='Convert IM outputs to digraphs with probs.')
 addarg = parser.add_argument
 
-addarg('--input_graph_file', type=str, default='../data/twitter/im_graph.txt')
-addarg('--input_user_counts_file', type=str, default='../data/twitter/im/usersCounts.txt')
-addarg('--input_edge_counts_file', type=str, default='../data/twitter/im/edgesCounts.txt')
+addarg('--input_graph_file', type=str, default='data/memes/im_graph.txt')
+addarg('--input_user_counts_file', type=str, default='data/memes/im/usersCounts.txt')
+addarg('--input_edge_counts_file', type=str, default='data/memes/im/edgesCounts.txt')
 
-addarg('--output_file', type=str, default='../data/twitter/prob_graph.txt')
+addarg('--output_file', type=str, default='data/memes/prob_graph.txt')
 
 args = parser.parse_args()
 

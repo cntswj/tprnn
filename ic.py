@@ -6,7 +6,7 @@ import os
 import data_utils
 from metrics import top_k_accuracy
 
-data_dir = 'data/digg'
+data_dir = 'data/memes'
 maxlen = 30
 method = 'ic'
 
@@ -62,6 +62,21 @@ def lt_pred_probs(sequence, G=None, tol=0.0001):
     return result
 
 
+def evaluate(G=None, k=10):
+    scores = []
+    input_test_file = os.path.join(data_dir, 'test.txt')
+    with open(input_test_file, 'rb') as f:
+        for line in f:
+            _, cascade = line.strip().split(' ', 1)
+            sequence = cascade.split()[::2][:maxlen]
+            sequence = [node_index[x] for x in sequence]
+            prob = lt_pred_probs(sequence[:-1], G=G)
+            y = sequence[1:]
+            scores.extend(top_k_accuracy(prob, y, k=k))
+
+    return sum(scores) / len(scores)
+
+
 _, node_index = data_utils.load_graph(data_dir)
 
 # loads probability graph (cascade subgraph with original ids).
@@ -77,15 +92,6 @@ with open(input_graph_file, 'rb') as f:
 G = nx.relabel_nodes(temp_graph, node_index)
 print nx.info(G)
 
-scores = []
-input_test_file = os.path.join(data_dir, 'test.txt')
-with open(input_test_file, 'rb') as f:
-    for line in f:
-        _, cascade = line.strip().split(' ', 1)
-        sequence = cascade.split()[::2][:maxlen]
-        sequence = [node_index[x] for x in sequence]
-        prob = lt_pred_probs(sequence[:-1], G=G)
-        y = sequence[1:]
-        scores.extend(top_k_accuracy(prob, y, k=10))
-
-print sum(scores) / len(scores)
+print evaluate(G=G, k=10)
+print evaluate(G=G, k=50)
+print evaluate(G=G, k=100)

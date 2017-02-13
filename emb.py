@@ -8,8 +8,8 @@ from keras.models import load_model
 from keras.utils import np_utils
 import metrics
 
-data_dir = 'data/dblp'
-emb_size = 64
+data_dir = 'data/memes'
+emb_size = 128
 save_path = os.path.join(data_dir, 'emb.h5')
 
 print data_dir

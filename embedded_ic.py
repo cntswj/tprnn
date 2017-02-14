@@ -21,10 +21,10 @@ flags.DEFINE_string("data_dir", 'data/memes', "data directory.")
 flags.DEFINE_integer("max_samples", 300000, "max number of samples.")
 flags.DEFINE_integer("emb_dim", 64, "embedding dimension.")
 flags.DEFINE_integer("disp_freq", 100, "frequency to output.")
-flags.DEFINE_integer("save_freq", 1000, "frequency to save.")
+flags.DEFINE_integer("save_freq", 10000, "frequency to save.")
 flags.DEFINE_integer("test_freq", 10000, "frequency to evaluate.")
-flags.DEFINE_float("lr", 0.0001, "initial learning rate.")
-flags.DEFINE_boolean("reload_model", 1, "whether to reuse saved model.")
+flags.DEFINE_float("lr", 0.001, "initial learning rate.")
+flags.DEFINE_boolean("reload_model", 0, "whether to reuse saved model.")
 
 FLAGS = flags.FLAGS
 
@@ -114,19 +114,22 @@ class Embedded_IC(object):
         p_v_hat = tf.placeholder(tf.float32, shape=())
         p_uv_hat = tf.placeholder(tf.float32, shape=())
 
-        emb_user = tf.Variable(tf.random_uniform([opts.user_size, opts.emb_dim], -0.1, 0.1),
-                               name='emb_user')
+        emb_sender = tf.Variable(tf.random_uniform([opts.user_size, opts.emb_dim], -0.1, 0.1),
+                                 name='emb_sender')
 
-        u_emb = tf.nn.embedding_lookup(emb_user, u)
-        v_emb = tf.nn.embedding_lookup(emb_user, v)
+        emb_receiver = tf.Variable(tf.random_uniform([opts.user_size, opts.emb_dim], -0.1, 0.1),
+                                   name='emb_receiver')
+
+        u_emb = tf.nn.embedding_lookup(emb_sender, u)
+        v_emb = tf.nn.embedding_lookup(emb_receiver, v)
 
         u_0 = tf.slice(u_emb, [0], [1])[0]
         v_0 = tf.slice(v_emb, [0], [1])[0]
-        v_0_all = tf.squeeze(tf.slice(emb_user, [0, 0], [-1, 1]))
+        v_0_all = tf.squeeze(tf.slice(emb_receiver, [0, 0], [-1, 1]))
 
         u_1_n = tf.slice(u_emb, [1], [-1])
         v_1_n = tf.slice(v_emb, [1], [-1])
-        v_1_n_all = tf.squeeze(tf.slice(emb_user, [0, 1], [-1, -1]))
+        v_1_n_all = tf.squeeze(tf.slice(emb_receiver, [0, 1], [-1, -1]))
 
         x = u_0 + v_0 + tf.reduce_sum(tf.square(u_1_n - v_1_n))
         x_all = u_0 + v_0_all + tf.reduce_sum(tf.square(v_1_n_all - u_1_n), axis=1)
@@ -154,7 +157,8 @@ class Embedded_IC(object):
         self.v = v
         self.p_uv_hat = p_uv_hat
         self.p_v_hat = p_v_hat
-        self.emb_user = emb_user
+        self.emb_sender = emb_sender
+        self.emb_receiver = emb_receiver
         self.p_uv = f
         self.p_u_all = f_all
         self.loss1 = loss1

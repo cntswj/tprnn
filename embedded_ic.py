@@ -19,12 +19,12 @@ flags = tf.app.flags
 
 flags.DEFINE_string("data_dir", 'data/memes', "data directory.")
 flags.DEFINE_integer("max_samples", 300000, "max number of samples.")
-flags.DEFINE_integer("emb_dim", 25, "embedding dimension.")
+flags.DEFINE_integer("emb_dim", 64, "embedding dimension.")
 flags.DEFINE_integer("disp_freq", 100, "frequency to output.")
 flags.DEFINE_integer("save_freq", 1000, "frequency to save.")
 flags.DEFINE_integer("test_freq", 10000, "frequency to evaluate.")
-flags.DEFINE_float("lr", 0.001, "initial learning rate.")
-flags.DEFINE_boolean("reload_model", 0, "whether to reuse saved model.")
+flags.DEFINE_float("lr", 0.0001, "initial learning rate.")
+flags.DEFINE_boolean("reload_model", 1, "whether to reuse saved model.")
 
 FLAGS = flags.FLAGS
 
@@ -115,7 +115,7 @@ class Embedded_IC(object):
         p_uv_hat = tf.placeholder(tf.float32, shape=())
 
         emb_user = tf.Variable(tf.random_uniform([opts.user_size, opts.emb_dim], -0.1, 0.1),
-                               name="emb_user")
+                               name='emb_user')
 
         u_emb = tf.nn.embedding_lookup(emb_user, u)
         v_emb = tf.nn.embedding_lookup(emb_user, v)
@@ -134,12 +134,18 @@ class Embedded_IC(object):
         f = tf.sigmoid(-x)
         f_all = tf.sigmoid(-x_all)
 
-        loss1 = -(1.0 - p_uv_hat / p_v_hat) * tf.log(1.0 - f) - (p_uv_hat / p_v_hat) * tf.log(f)
-        loss2 = -tf.log(1.0 - f)
+        eps = 1e-8
+        loss1 = -(1.0 - p_uv_hat / (p_v_hat + eps)) * tf.log(1.0 - f + eps) - (p_uv_hat / (p_v_hat + eps)) * tf.log(f + eps)
+        loss2 = -tf.log(1.0 - f + eps)
+
+        # weight_decay = 0.0005 * tf.nn.l2_loss(emb_user)
+        # loss1 += weight_decay
+        # loss1 += weight_decay
 
         tvars = tf.trainable_variables()
-        grads1, _ = tf.clip_by_value(tf.gradients(loss1, tvars), -5., 5.)
-        grads2, _ = tf.clip_by_value(tf.gradients(loss2, tvars), -5., 5.)
+
+        grads1, _ = tf.clip_by_global_norm(tf.gradients(loss1, tvars), clip_norm=1.)
+        grads2, _ = tf.clip_by_global_norm(tf.gradients(loss2, tvars), clip_norm=1.)
 
         train1 = tf.train.AdamOptimizer(opts.lr).apply_gradients(zip(grads1, tvars))
         train2 = tf.train.AdamOptimizer(opts.lr).apply_gradients(zip(grads2, tvars))

@@ -101,28 +101,34 @@ def load_params(path, params):
     return params
 
 
-def evaluate(f_prob, test_loader, k=10):
+def evaluate(f_prob, test_loader, k_list=[10, 50, 100]):
     '''
     Evaluates trained model.
     '''
     n_batches = len(test_loader)
-    acc = []
+    y = None
+    y_prob = None
     for _ in range(n_batches):
         batch_data = test_loader()
-        labels = batch_data[-1]
-        prob = f_prob(*batch_data[:-1])
+        y_ = batch_data[-1]
+        y_prob_ = f_prob(*batch_data[:-1])
 
         # excludes activated nodes when predicting.
-        for i, p in enumerate(prob):
+        for i, p in enumerate(y_prob_):
             length = int(np.sum(batch_data[1][:, i]))
             sequence = batch_data[0][: length, i]
-            assert labels[i] not in sequence, str(sequence) + str(labels[i])
+            assert y_[i] not in sequence, str(sequence) + str(y_[i])
             p[sequence] = 0.
-            prob[i, :] = p / np.sum(p)
+            y_prob_[i, :] = p / float(np.sum(p))
 
-        acc += metrics.top_k_accuracy(prob, labels, k=k)
+        if y_prob is None:
+            y_prob = y_prob_
+            y = y_
+        else:
+            y = np.concatenate((y, y_), axis=0)
+            y_prob = np.concatenate((y_prob, y_prob_), axis=0)
 
-    return sum(acc) / len(acc)
+    return metrics.portfolio(y_prob, y, k_list=k_list)
 
 
 # def simulate(f_pred, f_prob, seeds, n_timesteps=20, G=None, options=None):
@@ -147,7 +153,7 @@ def evaluate(f_prob, test_loader, k=10):
 #     return sequence
 
 
-def train(data_dir='data/memes/',
+def train(data_dir='data/twitter/',
           neighbor_sensitive=True,
           dim_proj=512,
           maxlen=30,
@@ -161,7 +167,7 @@ def train(data_dir='data/memes/',
           saveto_file='params.npz',
           weight_decay=0.0005,
           reload_model=True,
-          train=True):
+          train=False):
     """
     Topo-LSTM model training.
     """
@@ -256,14 +262,8 @@ def train(data_dir='data/memes/',
 
                 # evaluate on test data.
                 if global_step % test_freq == 0:
-                    score = evaluate(model['f_prob'], test_loader, k=10)
-                    print 'eval score: %f' % score
-
-                    score = evaluate(model['f_prob'], test_loader, k=50)
-                    print 'eval score: %f' % score
-
-                    score = evaluate(model['f_prob'], test_loader, k=100)
-                    print 'eval score: %f' % score
+                    scores = evaluate(model['f_prob'], test_loader)
+                    print 'eval scores: ', scores
 
                 global_step += 1
 
@@ -274,8 +274,8 @@ def train(data_dir='data/memes/',
         end_time = timeit.default_timer()
         print 'time used: %d seconds.' % (end_time - start_time)
 
-    err = evaluate(model['f_prob'], test_loader)
-    print 'test error: %f' % err
+    scores = evaluate(model['f_prob'], test_loader)
+    print 'evaluation scores: ', scores
 
     # runs some simulations for debugging.
     # test_example = test_examples[1000]

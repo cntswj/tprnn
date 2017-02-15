@@ -4,9 +4,9 @@ import numpy as np
 import os
 
 import data_utils
-from metrics import top_k_accuracy
+import metrics
 
-data_dir = 'data/memes'
+data_dir = 'data/digg'
 maxlen = 30
 method = 'ic'
 
@@ -29,7 +29,9 @@ def ic_pred_probs(sequence, G=None):
 
         prob = 1. - prob_comp
         prob[sequence[:i + 1]] = 0.
-        prob /= np.sum(prob)
+        if np.sum(prob) < 1e-8:
+            prob = np.ones(N)
+        prob /= float(np.sum(prob))
         result += [prob]
 
     return result
@@ -55,26 +57,28 @@ def lt_pred_probs(sequence, G=None, tol=0.0001):
         prob[thresholds > 1.] = 0.
         prob[prob < thresholds + tol] = 0.
         # prob[prob > 0] = 1.
-        prob /= np.sum(prob)
+        prob /= np.sum(prob) + 1e-8
 
         result += [prob]
 
     return result
 
 
-def evaluate(G=None, k=10):
-    scores = []
+def evaluate(G=None, k_list=[10, 50, 100]):
+    y_prob = []
+    y = []
     input_test_file = os.path.join(data_dir, 'test.txt')
     with open(input_test_file, 'rb') as f:
         for line in f:
             _, cascade = line.strip().split(' ', 1)
             sequence = cascade.split()[::2][:maxlen]
             sequence = [node_index[x] for x in sequence]
-            prob = lt_pred_probs(sequence[:-1], G=G)
-            y = sequence[1:]
-            scores.extend(top_k_accuracy(prob, y, k=k))
+            y_prob_ = ic_pred_probs(sequence[:-1], G=G)
+            y_ = sequence[1:]
+            y_prob += y_prob_
+            y += y_
 
-    return sum(scores) / len(scores)
+    return metrics.portfolio(y_prob, y, k_list=k_list)
 
 
 _, node_index = data_utils.load_graph(data_dir)
@@ -92,6 +96,4 @@ with open(input_graph_file, 'rb') as f:
 G = nx.relabel_nodes(temp_graph, node_index)
 print nx.info(G)
 
-print evaluate(G=G, k=10)
-print evaluate(G=G, k=50)
-print evaluate(G=G, k=100)
+print evaluate(G=G)

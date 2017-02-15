@@ -8,8 +8,8 @@ from keras.models import load_model
 from keras.utils import np_utils
 import metrics
 
-data_dir = 'data/memes'
-emb_size = 128
+data_dir = 'data/twitter'
+emb_size = 64
 save_path = os.path.join(data_dir, 'emb.h5')
 
 print data_dir
@@ -88,7 +88,7 @@ else:
 
 X, y = load_dataset(dataset='train')
 y_cat = np_utils.to_categorical(y)
-model.fit(X, y_cat, nb_epoch=30, verbose=1)
+model.fit(X, y_cat, nb_epoch=0, verbose=1)
 model.save(save_path)
 
 print 'testing...'
@@ -100,11 +100,4 @@ y_prob = model.predict_proba(X_test)
 # class_map = {c: i for i, c in enumerate(model.classes_)}
 # y_test = [class_map[c] if c in class_map else -1 for c in y_test]
 
-acc = metrics.top_k_accuracy(y_prob, y_test, k=10)
-print np.array(acc).mean()
-
-acc = metrics.top_k_accuracy(y_prob, y_test, k=50)
-print np.array(acc).mean()
-
-acc = metrics.top_k_accuracy(y_prob, y_test, k=100)
-print np.array(acc).mean()
+print(metrics.portfolio(y_prob, y_test, k_list=[10, 50, 100]))

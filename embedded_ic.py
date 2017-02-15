@@ -11,9 +11,10 @@ import tensorflow as tf
 import numpy as np
 # import pdb
 
-from metrics import top_k_accuracy
+import metrics
 
 random.seed(0)
+np.random.seed(0)
 
 flags = tf.app.flags
 
@@ -24,7 +25,8 @@ flags.DEFINE_integer("disp_freq", 100, "frequency to output.")
 flags.DEFINE_integer("save_freq", 10000, "frequency to save.")
 flags.DEFINE_integer("test_freq", 10000, "frequency to evaluate.")
 flags.DEFINE_float("lr", 0.001, "initial learning rate.")
-flags.DEFINE_boolean("reload_model", 0, "whether to reuse saved model.")
+flags.DEFINE_boolean("reload_model", 1, "whether to reuse saved model.")
+flags.DEFINE_boolean("train", 0, "whether to train model.")
 
 FLAGS = flags.FLAGS
 
@@ -181,7 +183,9 @@ class Embedded_IC(object):
         """
         opts = self._options
         c = self._train_cascades[cascadeId]
-        if random.random() < 0.5:
+
+        # if random.random() < 0.5:
+        if True:
             while True:
                 idx = random.randint(0, opts.user_size - 1)
                 if idx != c[0]:
@@ -263,32 +267,39 @@ class Embedded_IC(object):
             if n_samples % opts.save_freq == 0:
                 self.saver.save(self._session, opts.save_path)
             if n_samples % opts.test_freq == 0:
-                print(self.evaluate(k=10))
-                print(self.evaluate(k=50))
-                print(self.evaluate(k=100))
+                print(self.evaluate())
 
-    def evaluate(self, k=10):
+    def evaluate(self, k_list=[10, 50, 100]):
         '''evaluate the model.'''
-        acc_list = []
+        y_prob = []
+        y = []
         for c in self._test_cascades:
-            p = np.ones(self._n_words)
+            p_prod = np.ones(self._n_words)
             for i, u in enumerate(c[:-1]):
                 pf = c[:i + 1]
                 p_u_all = self._session.run(self.p_u_all, feed_dict={self.u: u})
                 p_u_all[pf] = 0.
-                p *= (1 - p_u_all)
-                y = c[i + 1]
-                acc = top_k_accuracy(1 - p, y, k=k)
-                acc_list += acc
+                p_prod *= (1 - p_u_all)
 
-        return sum(acc_list) / len(acc_list)
+                prob_ = 1 - p_prod
+                if np.sum(prob_) < 1e-8:
+                    prob_ = np.ones(self._n_words)
+                prob_ /= np.sum(prob_)
+                y_ = c[i + 1]
+
+                y_prob += [prob_]
+                y += [y_]
+
+        return metrics.portfolio(y_prob, y, k_list=k_list)
 
 
 def main(_):
     options = Options()
     with tf.Graph().as_default(), tf.Session() as session:
         model = Embedded_IC(options, session)
-        model.train()
+        if FLAGS.train:
+            model.train()
+        print(model.evaluate())
 
 
 if __name__ == "__main__":

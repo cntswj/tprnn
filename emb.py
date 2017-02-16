@@ -1,6 +1,7 @@
 import os
 import numpy as np
 # from sklearn.linear_model import LogisticRegression
+import pprint
 
 from keras.models import Sequential
 from keras.layers.core import Dense, Activation
@@ -8,8 +9,8 @@ from keras.models import load_model
 from keras.utils import np_utils
 import metrics
 
-data_dir = 'data/twitter'
-emb_size = 64
+data_dir = 'data/memes'
+emb_size = 128
 save_path = os.path.join(data_dir, 'emb.h5')
 
 print data_dir
@@ -100,4 +101,5 @@ y_prob = model.predict_proba(X_test)
 # class_map = {c: i for i, c in enumerate(model.classes_)}
 # y_test = [class_map[c] if c in class_map else -1 for c in y_test]
 
-print(metrics.portfolio(y_prob, y_test, k_list=[10, 50, 100]))
+scores = metrics.portfolio(y_prob, y_test, k_list=[10, 50, 100])
+pprint.pprint(scores)

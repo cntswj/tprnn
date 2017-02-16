@@ -9,7 +9,7 @@ import six.moves.cPickle as pickle
 import downhill
 import metrics
 # import pdb
-# import pprint
+import pprint
 
 import data_utils
 import tprnn_model
@@ -153,14 +153,14 @@ def evaluate(f_prob, test_loader, k_list=[10, 50, 100]):
 #     return sequence
 
 
-def train(data_dir='data/twitter/',
+def train(data_dir='data/memes/',
           neighbor_sensitive=True,
           dim_proj=512,
           maxlen=30,
           batch_size=256,
           shuffle_data=True,
           learning_rate=0.0001,
-          global_steps=50000,
+          global_steps=10000,
           disp_freq=100,
           save_freq=1000,
           test_freq=1000,
@@ -247,9 +247,11 @@ def train(data_dir='data/twitter/',
         n_epochs = global_steps // batches_per_epoch + 1
 
         global_step = 0
+        cost_history = []
         for _ in range(n_epochs):
             for _ in range(batches_per_epoch):
                 cost = f_update(*train_loader())
+                cost_history += [cost]
 
                 if global_step % disp_freq == 0:
                     print 'global step %d, cost: %f' % (global_step, cost)
@@ -273,9 +275,10 @@ def train(data_dir='data/twitter/',
 
         end_time = timeit.default_timer()
         print 'time used: %d seconds.' % (end_time - start_time)
+        print 'cost history: ', cost_history
 
     scores = evaluate(model['f_prob'], test_loader)
-    print 'evaluation scores: ', scores
+    pprint.pprint(scores)
 
     # runs some simulations for debugging.
     # test_example = test_examples[1000]

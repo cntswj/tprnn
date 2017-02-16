@@ -10,6 +10,7 @@ import os
 import tensorflow as tf
 import numpy as np
 # import pdb
+import pprint
 
 import metrics
 
@@ -18,13 +19,14 @@ np.random.seed(0)
 
 flags = tf.app.flags
 
-flags.DEFINE_string("data_dir", 'data/memes', "data directory.")
+flags.DEFINE_string("data_dir", 'data/digg', "data directory.")
 flags.DEFINE_integer("max_samples", 300000, "max number of samples.")
 flags.DEFINE_integer("emb_dim", 64, "embedding dimension.")
 flags.DEFINE_integer("disp_freq", 100, "frequency to output.")
 flags.DEFINE_integer("save_freq", 10000, "frequency to save.")
 flags.DEFINE_integer("test_freq", 10000, "frequency to evaluate.")
 flags.DEFINE_float("lr", 0.001, "initial learning rate.")
+flags.DEFINE_float("positive_sample_rate", 0.5, "rate of positive samples.")
 flags.DEFINE_boolean("reload_model", 1, "whether to reuse saved model.")
 flags.DEFINE_boolean("train", 0, "whether to train model.")
 
@@ -41,6 +43,8 @@ class Options(object):
         self.train_data = os.path.join(FLAGS.data_dir, 'train.txt')
         self.test_data = os.path.join(FLAGS.data_dir, 'test.txt')
         self.save_path = os.path.join(FLAGS.data_dir, 'embedded_ic/embedded_ic.ckpt')
+
+        self.positive_sample_rate = FLAGS.positive_sample_rate
 
         self.max_samples = FLAGS.max_samples
 
@@ -149,8 +153,10 @@ class Embedded_IC(object):
 
         tvars = tf.trainable_variables()
 
-        grads1, _ = tf.clip_by_global_norm(tf.gradients(loss1, tvars), clip_norm=1.)
-        grads2, _ = tf.clip_by_global_norm(tf.gradients(loss2, tvars), clip_norm=1.)
+        grads1 = tf.gradients(loss1, tvars)
+        grads2 = tf.gradients(loss2, tvars)
+        grads1, _ = tf.clip_by_global_norm(grads1, clip_norm=5.)
+        grads2, _ = tf.clip_by_global_norm(grads2, clip_norm=5.)
 
         train1 = tf.train.AdamOptimizer(opts.lr).apply_gradients(zip(grads1, tvars))
         train2 = tf.train.AdamOptimizer(opts.lr).apply_gradients(zip(grads2, tvars))
@@ -184,8 +190,8 @@ class Embedded_IC(object):
         opts = self._options
         c = self._train_cascades[cascadeId]
 
-        # if random.random() < 0.5:
-        if True:
+        # if True:
+        if random.random() > opts.positive_sample_rate:
             while True:
                 idx = random.randint(0, opts.user_size - 1)
                 if idx != c[0]:
@@ -299,7 +305,7 @@ def main(_):
         model = Embedded_IC(options, session)
         if FLAGS.train:
             model.train()
-        print(model.evaluate())
+        pprint.pprint(model.evaluate())
 
 
 if __name__ == "__main__":

@@ -2,11 +2,13 @@ import networkx as nx
 import random
 import numpy as np
 import os
+import pprint
 
 import data_utils
 import metrics
 
-data_dir = 'data/digg'
+
+data_dir = 'data/memes'
 maxlen = 30
 method = 'ic'
 
@@ -96,4 +98,4 @@ with open(input_graph_file, 'rb') as f:
 G = nx.relabel_nodes(temp_graph, node_index)
 print nx.info(G)
 
-print evaluate(G=G)
+pprint.pprint(evaluate(G=G))

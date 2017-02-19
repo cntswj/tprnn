@@ -101,7 +101,7 @@ def load_params(path, params):
     return params
 
 
-def evaluate(f_prob, test_loader, k_list=[10, 50, 100]):
+def evaluate(f_prob, test_loader, k_list=[10, 50, 100], neighbors_only=False):
     '''
     Evaluates trained model.
     '''
@@ -119,6 +119,9 @@ def evaluate(f_prob, test_loader, k_list=[10, 50, 100]):
             sequence = batch_data[0][: length, i]
             assert y_[i] not in sequence, str(sequence) + str(y_[i])
             p[sequence] = 0.
+            if neighbors_only:
+                nbr_mask = batch_data[-2][i].astype(int)
+                p[nbr_mask] = 0.
             y_prob_[i, :] = p / float(np.sum(p))
 
         if y_prob is None:
@@ -153,21 +156,22 @@ def evaluate(f_prob, test_loader, k_list=[10, 50, 100]):
 #     return sequence
 
 
-def train(data_dir='data/memes/',
+def train(data_dir='data/digg/',
           neighbor_sensitive=True,
-          dim_proj=512,
+          dim_proj=32,
           maxlen=30,
           batch_size=256,
+          keep_ratio=1.,
           shuffle_data=True,
           learning_rate=0.0001,
-          global_steps=10000,
+          global_steps=50000,
           disp_freq=100,
           save_freq=1000,
-          test_freq=1000,
+          test_freq=10000,
           saveto_file='params.npz',
           weight_decay=0.0005,
-          reload_model=True,
-          train=False):
+          reload_model=False,
+          train=True):
     """
     Topo-LSTM model training.
     """
@@ -207,6 +211,7 @@ def train(data_dir='data/memes/',
         print 'Loading train data...'
         train_examples = data_utils.load_examples(data_dir,
                                                   dataset='train',
+                                                  keep_ratio=options['keep_ratio'],
                                                   node_index=node_index,
                                                   maxlen=maxlen,
                                                   G=G)
@@ -275,7 +280,7 @@ def train(data_dir='data/memes/',
 
         end_time = timeit.default_timer()
         print 'time used: %d seconds.' % (end_time - start_time)
-        print 'cost history: ', cost_history
+        # print 'cost history: ', cost_history
 
     scores = evaluate(model['f_prob'], test_loader)
     pprint.pprint(scores)
@@ -291,4 +296,19 @@ def train(data_dir='data/memes/',
 
 
 if __name__ == '__main__':
-    train()
+    # train(data_dir='data/digg', dim_proj=64)
+    # train(data_dir='data/digg', dim_proj=128)
+    # train(data_dir='data/digg', dim_proj=256)
+    # train(data_dir='data/digg', dim_proj=512)
+
+    # train(data_dir='data/digg', dim_proj=512, keep_ratio=0.2)
+    # train(data_dir='data/digg', dim_proj=512, keep_ratio=0.4)
+    # train(data_dir='data/digg', dim_proj=512, keep_ratio=0.6)
+    train(data_dir='data/digg', dim_proj=512, keep_ratio=0.8)
+    # train(data_dir='data/digg', dim_proj=512, keep_ratio=1.0)
+
+    # train(data_dir='data/memes', dim_proj=32)
+    # train(data_dir='data/memes', dim_proj=64)
+    # train(data_dir='data/memes', dim_proj=128)
+    # train(data_dir='data/memes', dim_proj=256)
+    # train(data_dir='data/memes', dim_proj=512)

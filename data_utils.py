@@ -96,7 +96,7 @@ def convert_cascade_to_examples(sequence,
             return example
 
 
-def load_examples(data_dir, dataset=None, G=None, node_index=None, maxlen=None):
+def load_examples(data_dir, dataset=None, G=None, node_index=None, maxlen=None, keep_ratio=1.):
     """
     Load the train/dev/test data
     Return: list of example tuples
@@ -124,7 +124,10 @@ def load_examples(data_dir, dataset=None, G=None, node_index=None, maxlen=None):
 
         pickle.dump(examples, open(pkl_path, 'wb'))
 
-    return examples
+    n_samples = len(examples)
+    indices = np.random.choice(n_samples, int(n_samples * keep_ratio), replace=False)
+    sampled_examples = [examples[i] for i in indices]
+    return sampled_examples
 
 
 def prepare_minibatch(tuples, inference=False, options=None):

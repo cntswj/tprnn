@@ -8,7 +8,7 @@ import data_utils
 import metrics
 
 
-data_dir = 'data/memes'
+data_dir = 'data/digg'
 maxlen = 30
 method = 'ic'
 

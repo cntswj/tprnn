@@ -108,9 +108,6 @@ def build_model(tparams, options):
     labels = tensor.vector('labels', dtype='int32')
 
     inputs = [seqs, seq_masks, topo_masks]
-    if options['neighbor_sensitive']:
-        nbr_masks = tensor.matrix('nbr_masks', dtype=config.floatX)
-        inputs += [nbr_masks]
 
     n_timesteps = seqs.shape[0]
     n_samples = seqs.shape[1]
@@ -130,14 +127,7 @@ def build_model(tparams, options):
     h_mean = h_sum / lengths[:, None]
 
     # decode h_mean into input to softmax
-    s_ext = tensor.dot(h_mean, tparams['W_ext']) + tparams['b_ext']
-    if options['neighbor_sensitive']:
-        # decoding, probs.shape=(n_samples, n_words)
-        s_nbr = (tensor.dot(h_mean, tparams['W_nbr']) + tparams['b_nbr']) * nbr_masks
-        s = s_nbr + s_ext
-        # probs = exps / exps.sum(axis=1, keepdims=True)
-    else:
-        s = s_ext
+    s = tensor.dot(h_mean, tparams['W_ext']) + tparams['b_ext']
 
     probs = tensor.nnet.softmax(s)
 
@@ -152,9 +142,6 @@ def build_model(tparams, options):
     cost += options['weight_decay'] * (tparams['lstm_b'] ** 2).sum()
     cost += options['weight_decay'] * (tparams['W_ext'] ** 2).sum()
     cost += options['weight_decay'] * (tparams['b_ext'] ** 2).sum()
-    if options['neighbor_sensitive']:
-        cost += options['weight_decay'] * (tparams['W_nbr'] ** 2).sum()
-        cost += options['weight_decay'] * (tparams['b_nbr'] ** 2).sum()
 
     # set up functions for inferencing
     f_prob = theano.function(inputs, probs, name='f_prob')

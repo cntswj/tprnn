@@ -60,14 +60,6 @@ def init_params(options):
     dec_b = np.zeros(options['n_words'])
     params['b_ext'] = dec_b.astype(config.floatX)
 
-    # decoding matrix for neighborhood influences
-    if options['neighbor_sensitive']:
-        randn = np.random.randn(options['dim_proj'],
-                                options['n_words'])
-        params['W_nbr'] = (0.1 * randn).astype(config.floatX)
-        dec_b = np.zeros(options['n_words'])
-        params['b_nbr'] = dec_b.astype(config.floatX)
-
     return params
 
 
@@ -101,7 +93,7 @@ def load_params(path, params):
     return params
 
 
-def evaluate(f_prob, test_loader, k_list=[10, 50, 100], neighbors_only=False):
+def evaluate(f_prob, test_loader, k_list=[10, 50, 100]):
     '''
     Evaluates trained model.
     '''
@@ -119,9 +111,6 @@ def evaluate(f_prob, test_loader, k_list=[10, 50, 100], neighbors_only=False):
             sequence = batch_data[0][: length, i]
             assert y_[i] not in sequence, str(sequence) + str(y_[i])
             p[sequence] = 0.
-            if neighbors_only:
-                nbr_mask = batch_data[-2][i].astype(int)
-                p[nbr_mask] = 0.
             y_prob_[i, :] = p / float(np.sum(p))
 
         if y_prob is None:
@@ -134,40 +123,17 @@ def evaluate(f_prob, test_loader, k_list=[10, 50, 100], neighbors_only=False):
     return metrics.portfolio(y_prob, y, k_list=k_list)
 
 
-# def simulate(f_pred, f_prob, seeds, n_timesteps=20, G=None, options=None):
-#     '''
-#     Simulates a cascade given seeding nodes.
-#     '''
-#     sequence = seeds
-#     # probs = []
-#     for _ in range(n_timesteps):
-#         # constructs input for current sequence.
-#         example = data_utils.convert_cascade_to_examples(sequence, G=G,
-#                                                          inference=True)
-#         data_batch = data_utils.prepare_minibatch([example], inference=True, options=options)
-#         prob = f_prob(*data_batch[:-1])[0]
-#         prob[sequence] = 0.
-#         prob /= prob.sum()
-#         pred = np.random.choice(range(len(prob)), p=prob)
-#         sequence += [pred]
-#         # probs += [prob]
-
-#     # print probs
-#     return sequence
-
-
-def train(data_dir='data/digg/',
-          neighbor_sensitive=True,
-          dim_proj=32,
+def train(data_dir='data/memes/',
+          dim_proj=512,
           maxlen=30,
           batch_size=256,
           keep_ratio=1.,
           shuffle_data=True,
-          learning_rate=0.0001,
+          learning_rate=0.001,
           global_steps=50000,
           disp_freq=100,
           save_freq=1000,
-          test_freq=10000,
+          test_freq=1000,
           saveto_file='params.npz',
           weight_decay=0.0005,
           reload_model=False,
@@ -211,7 +177,8 @@ def train(data_dir='data/digg/',
         print 'Loading train data...'
         train_examples = data_utils.load_examples(data_dir,
                                                   dataset='train',
-                                                  keep_ratio=options['keep_ratio'],
+                                                  keep_ratio=options[
+                                                      'keep_ratio'],
                                                   node_index=node_index,
                                                   maxlen=maxlen,
                                                   G=G)
@@ -271,44 +238,14 @@ def train(data_dir='data/digg/',
                 if global_step % test_freq == 0:
                     scores = evaluate(model['f_prob'], test_loader)
                     print 'eval scores: ', scores
+                    end_time = timeit.default_timer()
+                    print 'time used: %d seconds.' % (end_time - start_time)
 
                 global_step += 1
-
-                # for debugging use.
-                # if global_step > 1000:
-                #     break
-
-        end_time = timeit.default_timer()
-        print 'time used: %d seconds.' % (end_time - start_time)
-        # print 'cost history: ', cost_history
 
     scores = evaluate(model['f_prob'], test_loader)
     pprint.pprint(scores)
 
-    # runs some simulations for debugging.
-    # test_example = test_examples[1000]
-    # sequence = test_example['sequence']
-    # print 'true cascade: ', sequence
-
-    # seeds = sequence[:3]
-    # preds = simulate(model['f_pred'], model['f_prob'], seeds, G=G, n_words=options['n_words'])
-    # print 'simulated: ', preds
-
 
 if __name__ == '__main__':
-    # train(data_dir='data/digg', dim_proj=64)
-    # train(data_dir='data/digg', dim_proj=128)
-    # train(data_dir='data/digg', dim_proj=256)
-    # train(data_dir='data/digg', dim_proj=512)
-
-    # train(data_dir='data/digg', dim_proj=512, keep_ratio=0.2)
-    # train(data_dir='data/digg', dim_proj=512, keep_ratio=0.4)
-    # train(data_dir='data/digg', dim_proj=512, keep_ratio=0.6)
-    train(data_dir='data/digg', dim_proj=512, keep_ratio=0.8)
-    # train(data_dir='data/digg', dim_proj=512, keep_ratio=1.0)
-
-    # train(data_dir='data/memes', dim_proj=32)
-    # train(data_dir='data/memes', dim_proj=64)
-    # train(data_dir='data/memes', dim_proj=128)
-    # train(data_dir='data/memes', dim_proj=256)
-    # train(data_dir='data/memes', dim_proj=512)
+    train(data_dir='data/twitter', dim_proj=512, keep_ratio=1.)

@@ -76,10 +76,6 @@ def convert_cascade_to_examples(sequence,
             i_p = [node_pos[x] for x in dag.predecessors(v)]
             topo_mask[i_v, i_p] = 1
 
-        neighborhoods = [G[v] for v in prefix]
-        all_neighbors = [w for neighbors in neighborhoods for w in neighbors]
-        frontier = list(set(all_neighbors) - set(prefix))
-
         if not inference:
             label = sequence[i + 1]
         else:
@@ -87,7 +83,6 @@ def convert_cascade_to_examples(sequence,
 
         example = {'sequence': prefix,
                    'topo_mask': topo_mask,
-                   'nbr_mask': frontier,
                    'label': label}
 
         if not inference:
@@ -96,7 +91,12 @@ def convert_cascade_to_examples(sequence,
             return example
 
 
-def load_examples(data_dir, dataset=None, G=None, node_index=None, maxlen=None, keep_ratio=1.):
+def load_examples(data_dir,
+                  dataset=None,
+                  G=None,
+                  node_index=None,
+                  maxlen=None,
+                  keep_ratio=1.):
     """
     Load the train/dev/test data
     Return: list of example tuples
@@ -125,7 +125,8 @@ def load_examples(data_dir, dataset=None, G=None, node_index=None, maxlen=None, 
         pickle.dump(examples, open(pkl_path, 'wb'))
 
     n_samples = len(examples)
-    indices = np.random.choice(n_samples, int(n_samples * keep_ratio), replace=False)
+    indices = np.random.choice(n_samples, int(
+        n_samples * keep_ratio), replace=False)
     sampled_examples = [examples[i] for i in indices]
     return sampled_examples
 
@@ -138,7 +139,6 @@ def prepare_minibatch(tuples, inference=False, options=None):
     lengths = map(len, seqs)
     n_timesteps = max(lengths)
     n_samples = len(tuples)
-    n_words = options['n_words']
 
     # prepare sequences data
     seqs_matrix = np.zeros((n_timesteps, n_samples)).astype('int32')
@@ -147,7 +147,8 @@ def prepare_minibatch(tuples, inference=False, options=None):
 
     # prepare topo-masks data
     topo_masks = [t['topo_mask'] for t in tuples]
-    topo_masks_tensor = np.zeros((n_timesteps, n_samples, n_timesteps)).astype(config.floatX)
+    topo_masks_tensor = np.zeros(
+        (n_timesteps, n_samples, n_timesteps)).astype(config.floatX)
     for i, topo_mask in enumerate(topo_masks):
         topo_masks_tensor[: lengths[i], i, : lengths[i]] = topo_mask
 
@@ -156,13 +157,6 @@ def prepare_minibatch(tuples, inference=False, options=None):
     for i, length in enumerate(lengths):
         seq_masks_matrix[: length, i] = 1.
 
-    # prepare neighborhood masks
-    if options['neighbor_sensitive']:
-        nbr_masks = [t['nbr_mask'] for t in tuples]
-        nbr_masks_matrix = np.zeros((n_samples, n_words)).astype(config.floatX)
-        for i, nbr_mask in enumerate(nbr_masks):
-            nbr_masks_matrix[i, nbr_mask] = 1.
-
     # prepare labels data
     if not inference:
         labels = [t['label'] for t in tuples]
@@ -170,17 +164,10 @@ def prepare_minibatch(tuples, inference=False, options=None):
     else:
         labels_vector = None
 
-    if options['neighbor_sensitive']:
-        return (seqs_matrix,
-                seq_masks_matrix,
-                topo_masks_tensor,
-                nbr_masks_matrix,
-                labels_vector)
-    else:
-        return (seqs_matrix,
-                seq_masks_matrix,
-                topo_masks_tensor,
-                labels_vector)
+    return (seqs_matrix,
+            seq_masks_matrix,
+            topo_masks_tensor,
+            labels_vector)
 
 
 class Loader:
